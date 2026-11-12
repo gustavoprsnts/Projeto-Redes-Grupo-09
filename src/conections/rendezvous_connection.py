@@ -17,13 +17,13 @@ def carrega_json():
 
 
 config = carrega_json()
-# funcao para comunicacao no randezvous
 
+# funcao para a leituras de dados ate a quebra de linha 
 def ler_linha(socket):
     #definicao de buffer 
     buffer = b""
     # loop para o envio a cada quebra de linha 
-    while not buffer.endswith("\n"):
+    while not buffer.endswith(b"\n"):
         parte = socket.recv(2048)
         if not parte:         
             break
@@ -31,8 +31,10 @@ def ler_linha(socket):
         if len(buffer) > 32768:
             #verificacao do estourou de buffer 
             raise ValueError("buffer maior que o limite") 
-    return buffer
+    return buffer 
 
+
+# funcao para comunicacao no randezvous
 def conectar_rdv(config, payload):
     # carregando dados do json
     host = config["rdv_host"]
