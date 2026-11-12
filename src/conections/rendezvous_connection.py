@@ -1,11 +1,15 @@
 import json
 import socket
+from pathlib import Path
+
+
+# constante que salva o caminho para acessar config 
+CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
+
 
 # funcao para a leitura e retorno dos dados do arquivo config.json
-
-
 def carrega_json():
-    with open("config.json", "r", encoding="UTF-8") as arquivo:
+    with open(CONFIG_PATH, "r", encoding="UTF-8") as arquivo:
         dados = json.load(arquivo)
         arquivo.close()
 
@@ -15,6 +19,19 @@ def carrega_json():
 config = carrega_json()
 # funcao para comunicacao no randezvous
 
+def ler_linha(socket):
+    #definicao de buffer 
+    buffer = b""
+    # loop para o envio a cada quebra de linha 
+    while not buffer.endswith("\n"):
+        parte = socket.recv(2048)
+        if not parte:         
+            break
+        buffer += parte
+        if len(buffer) > 32768:
+            #verificacao do estourou de buffer 
+            raise ValueError("buffer maior que o limite") 
+    return buffer
 
 def conectar_rdv(config, payload):
     # carregando dados do json
@@ -37,8 +54,12 @@ def conectar_rdv(config, payload):
         # envio dos dados ao servidor
         tcp_socket.sendall(linha_reposta.encode('UTF-8'))
 
-        # Guarda mensagem recebida do servidor
-        mensagem_recebida = tcp_socket.recv(32768)
+        # Chama a funcao ler_linha que recebe de forma correta os dados do servidor 
+        mensagem_recebida = ler_linha(tcp_socket)
+
+        if not  mensagem_recebida:
+            print("Erro: falha ao receber dados do servidor ")
+            return None
 
         # converte a mensagem json para dicionario
         resposta = json.loads(mensagem_recebida.strip())
@@ -52,10 +73,12 @@ def conectar_rdv(config, payload):
     except socket.timeout:
         print("Timeout error")
 
+    except json.JSONDecodeError:
+            print("Erro ao interpretar a resposta JSON")
+
     except Exception as erro:
         print(f"Erro ao conectar: {erro}")
-    except json.JSONDecodeError:
-        print("Erro ao interpretar a resposta JSON")
+   
     finally:
         tcp_socket.close()
 
@@ -68,12 +91,14 @@ def registrar_no_rdv(config):
         "type": "REGISTER",
         "namespace": config["namespace"],
         "name": config["name"],
-        "port": config["listen_port"]
+        "port": config["listen_port"],
+        "ttl": config["register_ttl"]
     }
 
     resposta = conectar_rdv(config, payload)
     return resposta
 
+# funcao para fazer as descobertas dos peers 
 
 def descobrir_peers(config):
 
