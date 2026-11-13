@@ -47,16 +47,15 @@ def conectar_rdv(config, payload):
     tcp_socket.settimeout(5)
     # usando o try para pegar as excecoes
     try:
-        # criacao do socket tcp
+      
         tcp_socket.connect((host, porta))
 
-        # Conversao da mensagem em um json + quebra de linha
         linha_reposta = json.dumps(payload) + '\n'
 
         # envio dos dados ao servidor
         tcp_socket.sendall(linha_reposta.encode('UTF-8'))
 
-        # Chama a funcao ler_linha que recebe de forma correta os dados do servidor 
+        
         mensagem_recebida = ler_linha(tcp_socket)
 
         if not  mensagem_recebida:
@@ -86,7 +85,6 @@ def conectar_rdv(config, payload):
 
 # funcao para registrar no randezvous
 
-
 def registrar_no_rdv(config):
 
     payload = {
@@ -112,7 +110,7 @@ def descobrir_peers(config):
     resposta = conectar_rdv(config, payload)
     return resposta
 
-
+# funcao de unregister para o cancelamento de registro 
 def unregister(config):
     payload = {
         "type": "UNREGISTER",

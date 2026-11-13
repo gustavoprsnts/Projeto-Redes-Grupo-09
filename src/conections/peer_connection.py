@@ -74,9 +74,9 @@ def conexao_peer(conexao,endereco,config):
     return peer
 
  # funcao com o loop para lidar com a aceitação de conexoes dos peers
-def loop_accept(socket, config):
+def loop_accept(sock, config):
     while True:
-        conexao, endereco = socket.accept()
+        conexao, endereco = sock.accept()
         # thread para evitar um processo de conexao atrasar o outro
         t = threading.Thread(target=conexao_peer, args=(
             conexao, endereco, config), daemon=True)
