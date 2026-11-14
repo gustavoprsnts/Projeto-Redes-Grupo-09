@@ -1,5 +1,6 @@
 import json
 import socket
+import uuid
 from rendezvous_connection import carrega_json, ler_linha
 import threading
 
@@ -21,12 +22,10 @@ def handshake(conexao, endereco, config):
             print("[Erro]  bad_request")
             conexao.close()
             return
-
         if not mensagem.get("msg_id") or not mensagem.get("peer_id") or mensagem.get("ttl") != 1:
             print("[Erro] bad_request")
             conexao.close()
             return
-
         if mensagem.get("version") != "1.0":
             print("[Erro] bad_request")
             conexao.close()
@@ -66,26 +65,119 @@ def handshake(conexao, endereco, config):
         print(f"[Erro] {erro}")
         conexao.close()
 
+# funcao para guardar o id do peer 
+def meu_id(config): return config["name"] + "@" + config["namespace"]
 
-def conexao_peer(conexao,endereco,config):
+
+#funcao que inicia a conexão e envia o pacote inicial HELLO
+def handshake_saida(ip, porta, peer_id_esperado, config):
+    conexao = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    conexao.settimeout(5)
+    try:
+        conexao.connect((ip, porta))
+
+        msg_id = str(uuid.uuid4())
+        hello = {
+            "type": "HELLO",
+            "msg_id": msg_id,
+            "peer_id": meu_id(config),
+            "version": "1.0",
+            "features": ["hangman"],
+            "ttl": 1
+        }
+        conexao.sendall((json.dumps(hello) + '\n').encode("UTF-8"))
+
+        linha = ler_linha(conexao)
+        if not linha:
+            print("peer fechou sem responder o HELLO")
+        resposta = json.loads(linha)
+
+        if resposta.get("type") != "HELLO_OK":
+            print("resposta nao foi HELLO_OK")
+        if resposta.get("msg_id") != msg_id:
+            print("msg_id diferente do HELLO")
+        if resposta.get("version") != "1.0" or resposta.get("ttl") != 1:
+            print("versao ou ttl invalido")
+        if resposta.get("peer_id") != peer_id_esperado:
+            print("peer_id inesperado")
+
+        com_hang = "hangman" in resposta.get("features", [])
+        if not com_hang:
+            print("peer nao apresenta forca")
+
+        conexao.settimeout(None)
+        print(f"Handshake realizado com {peer_id_esperado}:{ip}")
+        return {
+            "conexao": conexao,
+            "peer_id": peer_id_esperado,
+            "tem_hangman": com_hang,
+            "direcao": "outbound"
+        }
+
+    except Exception as erro:
+        print(f"[Erro] handshake de saida com {peer_id_esperado}: {erro}")
+        conexao.close()
+        return None
+
+
+# funcao que envia o bye do bye bye_ok 
+def encerrar_conexao(conexao, config, peer_id, motivo):
+    try:
+        bye = {
+            "type": "BYE",
+            "msg_id": str(uuid.uuid4()),
+            "src": meu_id(config),
+            "dst": peer_id,
+            "reason": motivo,
+            "ttl": 1
+        }
+        conexao.sendall((json.dumps(bye) + '\n').encode("UTF-8"))
+        conexao.settimeout(2)          
+        ler_linha(conexao)
+    except Exception:
+        pass
+    finally:
+        conexao.close()
+
+
+# funcao que armazena peer conectado no peertable
+def guardar_conexao(tabela, config, peer, conexao):
+    peer_id = peer["peer_id"]
+    venceu, perdedora = tabela.registrar_conexao(
+        peer_id, conexao, peer["direcao"], peer["tem_hangman"])
+
+    if perdedora is not None:
+        print(f"[PeerServer] Duplicate connection with {peer_id} - "
+              f"keeping {tabela.direcao(peer_id)} ")
+        encerrar_conexao(perdedora, config, peer_id, "duplicate")
+
+
+# funcao que coordena a parte do envio do Hello 
+def conectar_e_registrar(peer_id, ip, porta, config, tabela):
+    resultado = handshake_saida(ip, porta, peer_id, config)
+    if resultado is None:
+        tabela.registra_erro(peer_id)
+        return
+    guardar_conexao(tabela, config, resultado, resultado["conexao"])
+
+#funcao que coordena a parte de chegada do handshake
+def conexao_peer(conexao,endereco,config,tabela):
     peer = handshake(conexao,endereco,config)
     if not peer:
         return None
-    return peer
+    guardar_conexao(tabela, config, peer, conexao)
 
  # funcao com o loop para lidar com a aceitação de conexoes dos peers
-def loop_accept(sock, config):
+def loop_accept(sock, config, tabela):
     while True:
         conexao, endereco = sock.accept()
         # thread para evitar um processo de conexao atrasar o outro
         t = threading.Thread(target=conexao_peer, args=(
-            conexao, endereco, config), daemon=True)
+            conexao, endereco, config,tabela), daemon=True)
         t.start()
 
-
 # funcao que inicia conexao que sera usada nos peers
-def iniciar_servidor():
-    config = carrega_json()
+def iniciar_servidor(config, tabela):
     # criacao de socket tcp
     socketTcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # permite reusar a porta logo após reiniciar o programa
@@ -96,11 +188,11 @@ def iniciar_servidor():
     socketTcp.listen()
     # thread para rodar as funcoes sem travar o programa principal
     thread = threading.Thread(
-        target=loop_accept, args=(socketTcp, config), daemon=True)
+        target=loop_accept, args=(socketTcp, config,tabela), daemon=True)
     thread.start()
     return socketTcp
 
 
-if __name__ == "__main__":
-    iniciar_servidor()
-    input("Servidor ligado. Enter para sair.\n")
+
+
+

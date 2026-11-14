@@ -16,21 +16,24 @@ def carrega_json():
     return dados
 
 
-config = carrega_json()
+
 
 # funcao para a leituras de dados ate a quebra de linha 
 def ler_linha(socket):
     #definicao de buffer 
     buffer = b""
+    
     # loop para o envio a cada quebra de linha 
-    while not buffer.endswith(b"\n"):
-        parte = socket.recv(2048)
-        if not parte:         
-            break
-        buffer += parte
-        if len(buffer) > 32768:
-            #verificacao do estourou de buffer 
-            raise ValueError("buffer maior que o limite") 
+    while b"\n" not in buffer:
+            parte = socket.recv(2048)
+            if not parte:         
+                break
+            buffer += parte
+            
+
+            if len(buffer) > 32768:
+                #verificacao do estourou de buffer 
+                raise ValueError("buffer maior que o limite") 
     return buffer 
 
 
@@ -85,7 +88,7 @@ def conectar_rdv(config, payload):
 
 # funcao para registrar no randezvous
 
-def registrar_no_rdv(config):
+def register(config):
 
     payload = {
         "type": "REGISTER",
@@ -96,19 +99,29 @@ def registrar_no_rdv(config):
     }
 
     resposta = conectar_rdv(config, payload)
+    if resposta is not None:
+        print(f"[RDV] registered {config['name']}@{config['namespace']} as " 
+              f"{resposta.get('ip')}:{resposta.get('port')} (ttl={resposta.get('ttl')})")
     return resposta
 
 # funcao para fazer as descobertas dos peers 
 
-def descobrir_peers(config):
+def discover(config):
 
     payload = {
         "type": "DISCOVER",
         "namespace": config["namespace"]
     }
-
     resposta = conectar_rdv(config, payload)
-    return resposta
+    if resposta is None:
+        return None
+    # loop para não aparecer meu proprio peer na lista descover 
+    lista =[]
+    for p in resposta["peers"]:
+        if  not  (p["name"]== config["name"] and p["namespace"] == config["namespace"]):
+            lista.append(p)
+        
+    return lista
 
 # funcao de unregister para o cancelamento de registro 
 def unregister(config):
@@ -124,6 +137,7 @@ def unregister(config):
 
 if __name__ == "__main__":
     print("A tentar registar no servidor Rendezvous...")
-    teste1 = registrar_no_rdv(config)
+    config = carrega_json()
+    teste1 = register(config)
     teste = unregister(config)
     print(teste)
