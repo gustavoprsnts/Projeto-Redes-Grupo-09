@@ -3,9 +3,10 @@ import socket
 from pathlib import Path
 
 
+
 # constante que salva o caminho para acessar config 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
-
+MAX_BUFFER = 32768
 
 # funcao para a leitura e retorno dos dados do arquivo config.json
 def carrega_json():
@@ -31,8 +32,8 @@ def ler_linha(socket):
             buffer += parte
             
 
-            if len(buffer) > 32768:
-                #verificacao do estourou de buffer 
+            if len(buffer) > MAX_BUFFER:
+                #verificacao do estouro de buffer 
                 raise ValueError("buffer maior que o limite") 
     return buffer 
 
@@ -134,6 +135,17 @@ def unregister(config):
     resposta = conectar_rdv(config, payload)
     return resposta
 
+# refresh do peer antes do fim do ttl
+def refresh_register(config, encerrar,ttl):
+    intervalo = ttl/2
+    while not encerrar.wait(intervalo):
+        resposta = register(config)
+        if resposta is not None:
+                ttl = resposta.get("ttl", ttl)
+                intervalo =  ttl / 2
+        else:
+                intervalo = config["discover_interval"]
+    
 
 if __name__ == "__main__":
     print("A tentar registar no servidor Rendezvous...")

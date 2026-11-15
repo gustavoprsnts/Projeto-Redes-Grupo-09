@@ -12,24 +12,18 @@ def handshake(conexao, endereco, config):
         linha = ler_linha(conexao)
 #
         if not linha:
-            print("Peer não enviou nenhuma mensagem")
-            conexao.close()
-            return
+            raise ValueError("Peer não enviou nenhuma mensagem")
         mensagem = json.loads(linha)
 
       # verificacoes do handshake
         if mensagem.get("type") != "HELLO":
-            print("[Erro]  bad_request")
-            conexao.close()
-            return
+            raise ValueError("[Erro]  bad_request")
+           
         if not mensagem.get("msg_id") or not mensagem.get("peer_id") or mensagem.get("ttl") != 1:
-            print("[Erro] bad_request")
-            conexao.close()
-            return
+            raise ValueError("[Erro] bad_request")
         if mensagem.get("version") != "1.0":
-            print("[Erro] bad_request")
-            conexao.close()
-            return
+            raise ValueError("[Erro] bad_request")
+            
 
         # verifica se o peer tem a feature da forca e guarda na variavel com_hang
         com_hang = "hangman" in mensagem.get("features", [])
