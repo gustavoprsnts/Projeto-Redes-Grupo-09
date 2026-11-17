@@ -1,41 +1,44 @@
 import json
+import logging
 import socket
 from pathlib import Path
 
 
+logger = logging.getLogger(__name__)
 
-# constante que salva o caminho para acessar config 
+# constante que salva o caminho para acessar config
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
 MAX_BUFFER = 32768
+
 
 # funcao para a leitura e retorno dos dados do arquivo config.json
 def carrega_json():
     with open(CONFIG_PATH, "r", encoding="UTF-8") as arquivo:
         dados = json.load(arquivo)
-        arquivo.close()
-
     return dados
 
 
-
-
-# funcao para a leituras de dados ate a quebra de linha 
-def ler_linha(socket):
-    #definicao de buffer 
+# funcao para a leitura de dados ate a quebra de linha
+def ler_linha(sock):
+    # definicao de buffer
     buffer = b""
-    
-    # loop para o envio a cada quebra de linha 
-    while b"\n" not in buffer:
-            parte = socket.recv(2048)
-            if not parte:         
-                break
-            buffer += parte
-            
 
-            if len(buffer) > MAX_BUFFER:
-                #verificacao do estouro de buffer 
-                raise ValueError("buffer maior que o limite") 
-    return buffer 
+    # loop para leitura ate encontrar quebra de linha
+    while b"\n" not in buffer:
+        parte = sock.recv(2048)
+        if not parte:
+            break
+        buffer += parte
+
+        if len(buffer) > MAX_BUFFER:
+            # verificacao do estouro de buffer
+            raise ValueError("buffer maior que o limite")
+
+    if not buffer:
+        return b""
+
+    linha, _resto = buffer.split(b"\n", 1)
+    return linha
 
 
 # funcao para comunicacao no randezvous
@@ -47,23 +50,21 @@ def conectar_rdv(config, payload):
     # Realizando conexao tcp
     tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # setando timout do tcp em 5 segundos
+    # setando timeout do tcp em 5 segundos
     tcp_socket.settimeout(5)
     # usando o try para pegar as excecoes
     try:
-      
         tcp_socket.connect((host, porta))
 
-        linha_reposta = json.dumps(payload) + '\n'
+        linha_reposta = json.dumps(payload) + "\n"
 
         # envio dos dados ao servidor
-        tcp_socket.sendall(linha_reposta.encode('UTF-8'))
+        tcp_socket.sendall(linha_reposta.encode("UTF-8"))
 
-        
         mensagem_recebida = ler_linha(tcp_socket)
 
-        if not  mensagem_recebida:
-            print("Erro: falha ao receber dados do servidor ")
+        if not mensagem_recebida:
+            logger.error("Falha ao receber dados do servidor Rendezvous (%s:%s)", host, porta)
             return None
 
         # converte a mensagem json para dicionario
@@ -72,20 +73,25 @@ def conectar_rdv(config, payload):
         # verificação dos status
         if resposta.get("status") == "OK":
             return resposta
-        else:
-            print(f"Erro retornado pelo Rendezvous: {resposta.get('message')}")
+
+        logger.warning("Erro retornado pelo Rendezvous: %s", resposta.get("message"))
+        return None
 
     except socket.timeout:
-        print("Timeout error")
+        logger.warning("Timeout ao conectar no Rendezvous (%s:%s)", host, porta)
+        return None
 
     except json.JSONDecodeError:
-            print("Erro ao interpretar a resposta JSON")
+        logger.error("Erro ao interpretar a resposta JSON do Rendezvous")
+        return None
 
     except Exception as erro:
-        print(f"Erro ao conectar: {erro}")
-   
+        logger.exception("Erro ao conectar no Rendezvous: %s", erro)
+        return None
+
     finally:
         tcp_socket.close()
+
 
 # funcao para registrar no randezvous
 
@@ -96,60 +102,72 @@ def register(config):
         "namespace": config["namespace"],
         "name": config["name"],
         "port": config["listen_port"],
-        "ttl": config["register_ttl"]
+        "ttl": config["register_ttl"],
     }
 
     resposta = conectar_rdv(config, payload)
     if resposta is not None:
-        print(f"[RDV] registered {config['name']}@{config['namespace']} as " 
-              f"{resposta.get('ip')}:{resposta.get('port')} (ttl={resposta.get('ttl')})")
+        logger.info(
+            "[RDV] registered %s@%s as %s:%s (ttl=%s)",
+            config["name"],
+            config["namespace"],
+            resposta.get("ip"),
+            resposta.get("port"),
+            resposta.get("ttl"),
+        )
     return resposta
 
-# funcao para fazer as descobertas dos peers 
+
+# funcao para fazer as descobertas dos peers
+
 
 def discover(config):
 
     payload = {
         "type": "DISCOVER",
-        "namespace": config["namespace"]
+        "namespace": config["namespace"],
     }
     resposta = conectar_rdv(config, payload)
     if resposta is None:
         return None
-    # loop para não aparecer meu proprio peer na lista descover 
-    lista =[]
-    for p in resposta["peers"]:
-        if  not  (p["name"]== config["name"] and p["namespace"] == config["namespace"]):
+    # loop para não aparecer meu proprio peer na lista discover
+    lista = []
+    for p in resposta.get("peers", []):
+        if not (p.get("name") == config["name"] and p.get("namespace") == config["namespace"]):
             lista.append(p)
-        
+
     return lista
 
-# funcao de unregister para o cancelamento de registro 
+
+# funcao de unregister para o cancelamento de registro
 def unregister(config):
     payload = {
         "type": "UNREGISTER",
         "namespace": config["namespace"],
         "name": config["name"],
-        "port": config["listen_port"]
+        "port": config["listen_port"],
     }
     resposta = conectar_rdv(config, payload)
     return resposta
 
+
 # refresh do peer antes do fim do ttl
-def refresh_register(config, encerrar,ttl):
-    intervalo = ttl/2
+def refresh_register(config, encerrar, ttl):
+    intervalo = ttl / 2
     while not encerrar.wait(intervalo):
         resposta = register(config)
         if resposta is not None:
-                ttl = resposta.get("ttl", ttl)
-                intervalo =  ttl / 2
+            ttl = resposta.get("ttl", ttl)
+            intervalo = ttl / 2
         else:
-                intervalo = config["discover_interval"]
-    
+            logger.warning("Falha ao renovar registro no Rendezvous; nova tentativa em %ss", config["discover_interval"])
+            intervalo = config["discover_interval"]
+
 
 if __name__ == "__main__":
-    print("A tentar registar no servidor Rendezvous...")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    logger.info("A tentar registar no servidor Rendezvous...")
     config = carrega_json()
     teste1 = register(config)
     teste = unregister(config)
-    print(teste)
+    logger.info("Resposta do unregister: %s", teste)
