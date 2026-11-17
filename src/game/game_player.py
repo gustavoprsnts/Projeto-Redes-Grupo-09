@@ -1,10 +1,14 @@
 from collections.abc import Callable
+import hashlib
+
+from src.protocol import criar_envelope
 
 class GamePlayer:
     def __init__(
         self,
         player_id: str,
         game_id: str,
+        host_id: str,
         word_hash: str,
         word_length: int,
         lives: int,
@@ -14,6 +18,7 @@ class GamePlayer:
     ):
         self.player_id = player_id
         self.game_id = game_id
+        self.host_id = host_id
         self.word_hash = word_hash
         self.word_length = word_length
         self.lives = lives
@@ -26,13 +31,13 @@ class GamePlayer:
         self.enviar = enviar
 
     def enviar_palpite_letra(self, letra: str) -> dict:
-        mensagem = {
-            "type": "GUESS",
-            "src": self.player_id,
-            "game_id": self.game_id,
-            "letter": letra,
-            "ttl": 1,
-        }
+        mensagem = criar_envelope(
+            tipo="GUESS",
+            src=self.player_id,
+            dst=self.host_id,
+            letter=letra,
+            game_id=self.game_id,
+        )
 
         if self.enviar is None:
             raise RuntimeError("Nenhuma função de envio foi configurada")
@@ -40,17 +45,81 @@ class GamePlayer:
         return self.enviar(mensagem)
 
     def enviar_palpite_palavra(self, palavra: str) -> dict:
-        mensagem = {
-            "type": "GUESS",
-            "src": self.player_id,
-            "game_id": self.game_id,
-            "word": palavra,
-            "ttl": 1,
-        }
+        mensagem = criar_envelope(
+            tipo="GUESS",
+            src=self.player_id,
+            dst=self.host_id,
+            game_id=self.game_id,
+            word=palavra,
+        )
 
         if self.enviar is None:
             raise RuntimeError("Nenhuma função de envio foi configurada")
 
         return self.enviar(mensagem)
 
-    
+    def processar_state(self, mensagem: dict) -> bool:
+        if mensagem["seq"] <= self.last_seq:
+            return False
+
+        self.last_seq = mensagem["seq"]
+        self.masked = mensagem["masked"]
+        self.wrong_letters = mensagem["wrong_letters"].copy()
+        self.lives = mensagem["lives"]
+        self.turn = mensagem["turn"]
+        self.players = mensagem["players"].copy()
+        self.status = mensagem["status"]
+
+        return True
+
+    def processar_guess_result(self, mensagem: dict) -> dict:
+        if not mensagem["accepted"]:
+            return {
+                "accepted": False,
+                "reason": mensagem["reason"],
+            }
+
+        return {
+            "accepted": True,
+            "correct": mensagem["correct"],
+        }
+
+    def processar_game_over(self, mensagem: dict) -> dict:
+        if mensagem.get("type") != "GAME_OVER":
+            return {
+                "accepted": False,
+                "reason": "invalid_message",
+            }
+
+        palavra = mensagem.get("word")
+        if not isinstance(palavra, str):
+            return {
+                "accepted": False,
+                "reason": "missing_word",
+            }
+
+        hash_valido = self.verificar_hash(palavra)
+        self.status = "FINISHED"
+
+        resultado = {
+            "accepted": True,
+            "status": "FINISHED",
+            "result": mensagem.get("result"),
+            "word": palavra,
+            "hash_valid": hash_valido,
+        }
+
+        if not hash_valido:
+            resultado["warning"] = "host cheated: hash mismatch"
+
+        return resultado
+        
+
+    def calcular_hash(self, palavra: str) -> str:
+        return hashlib.sha256(
+            palavra.encode("utf-8")
+        ).hexdigest()
+
+    def verificar_hash(self, palavra: str) -> bool:
+        hash_recebido = self.calcular_hash(palavra)
+        return hash_recebido == self.word_hash
