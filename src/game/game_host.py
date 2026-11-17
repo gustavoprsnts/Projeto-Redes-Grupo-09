@@ -3,6 +3,7 @@ from time import monotonic
 from uuid import uuid4
 
 from src.game.hangman import Hangman
+from src.protocol import criar_envelope
 
 IDLE = "IDLE"
 OPEN = "OPEN"
@@ -79,15 +80,24 @@ class GameHost:
         jogador: str,
         letra: str | None = None,
         palavra: str | None = None,
+        msg_id: str | None = None,
     ) -> dict:
         if self.estado != RUNNING:
-            return {"accepted": False, "reason": "game_not_running"}
+            return self.guess_result(
+                jogador, {"accepted": False, "reason": "game_not_running"}, msg_id
+            )
         if jogador not in self.jogadores:
-            return {"accepted": False, "reason": "unknown_player"}
+            return self.guess_result(
+                jogador, {"accepted": False, "reason": "unknown_player"}, msg_id
+            )
         if jogador != self.jogador_da_vez():
-            return {"accepted": False, "reason": "not_your_turn"}
+            return self.guess_result(
+                jogador, {"accepted": False, "reason": "not_your_turn"}, msg_id
+            )
         if (letra is None) == (palavra is None):
-            return {"accepted": False, "reason": "invalid_guess"}
+            return self.guess_result(
+                jogador, {"accepted": False, "reason": "invalid_guess"}, msg_id
+            )
 
         masked_before = self.jogo.mascara()
         if letra is not None:
@@ -97,8 +107,11 @@ class GameHost:
             resultado = self.jogo.tentar_palavra(palavra or "")
             guess_data = {"player": jogador, "word": palavra}
 
+        resposta = self.guess_result(jogador, resultado, msg_id)
         if not resultado["accepted"]:
-            return resultado
+            return resposta
+
+        resultado = resposta
 
         guess_data["correct"] = resultado["correct"]
         self.last_guess = guess_data
@@ -114,23 +127,53 @@ class GameHost:
 
         if self.jogo.estado in ("WON", "LOST"):
             self.finalizar()
-            resultado["game_over"] = self.game_over(jogador_da_jogada)
+            resultado["game_over"] = self.game_over(
+                jogador_da_jogada,
+                jogador_da_jogada,
+            )
         else:
             self.avancar_turno()
             self.seq += 1
-            resultado["state"] = self.state()
+            resultado["state"] = self.state(dst=jogador)
 
         return resultado
 
-    def state(self) -> dict:
-        return {
-            "game_id": self.game_id,
-            "seq": self.seq,
+    def guess_result(self, jogador: str, resultado: dict, msg_id: str | None) -> dict:
+        resposta = criar_envelope(
+            tipo="GUESS_RESULT",
+            src=self.host_id,
+            dst=jogador,
+            msg_id=msg_id,
+            game_id=self.game_id,
+        )
+        resposta.update(resultado)
+        return resposta
+
+    def state(self, dst: str | None = None) -> dict:
+        return criar_envelope(
+            tipo="STATE",
+            src=self.host_id,
+            dst=dst,
+            game_id=self.game_id,
+            seq=self.seq,
             **self.jogo.snapshot(),
-            "turn": self.jogador_da_vez(),
-            "players": self.jogadores.copy(),
-            "last_guess": self.last_guess.copy() if self.last_guess else None,
-        }
+            turn=self.jogador_da_vez(),
+            players=self.jogadores.copy(),
+            last_guess=self.last_guess.copy() if self.last_guess else None,
+        )
+
+    def game_start(self, dst: str | None = None) -> dict:
+        return criar_envelope(
+            tipo="GAME_START",
+            src=self.host_id,
+            dst=dst,
+            game_id=self.game_id,
+            players=self.jogadores.copy(),
+            lives=self.jogo.vidas,
+            word_length=len(self.jogo.palavra),
+            word_hash=self.jogo.word_hash(),
+            turn_timeout=self.turn_timeout,
+        )
 
     def processar_timeout(self) -> dict | None:
         if self.estado != RUNNING or self.turn_started_at is None:
@@ -145,16 +188,19 @@ class GameHost:
         }
         self.avancar_turno()
         self.seq += 1
-        return self.state()
+        return self.state(dst=self.jogador_da_vez())
 
-    def game_over(self, vencedor: str | None = None) -> dict:
+    def game_over(self, vencedor: str | None = None, dst: str | None = None) -> dict:
         result = "WON" if self.jogo.estado == "WON" else "LOST"
         winner = vencedor if result == "WON" else None
 
-        return {
-            "game_id": self.game_id,
-            "result": result,
-            "word": self.jogo.palavra,
-            "winner": winner,
-            "scores": self.scores.copy(),
-        }
+        return criar_envelope(
+            tipo="GAME_OVER",
+            src=self.host_id,
+            dst=dst,
+            game_id=self.game_id,
+            result=result,
+            word=self.jogo.palavra,
+            winner=winner,
+            scores=self.scores.copy(),
+        )
