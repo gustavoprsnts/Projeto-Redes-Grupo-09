@@ -14,9 +14,9 @@ MAPA = {
     "__main__": "CLI", "interface.cli": "CLI",
 }
 
-
+# classe 
 class FiltroMensagem(logging.Filter):
-    
+     #funcao para filtrar mensagens de log 
    def filter(self, record):
         tag = MAPA.get(record.name)
         if tag not in {"RDV", "CLI"}:
@@ -26,7 +26,7 @@ class FiltroMensagem(logging.Filter):
 
 
 
-
+#  funcao que configura o sistema de logging global co
 def configurar_logging(log_file=None, nivel="INFO"):
     global _console
     raiz = logging.getLogger()
@@ -46,4 +46,4 @@ def configurar_logging(log_file=None, nivel="INFO"):
 
 def definir_nivel_tela(nome):
     if _console:
-     _console.setLevel(getattr(logging, nome.upper()))
+        _console.setLevel(getattr(logging, nome.upper()))

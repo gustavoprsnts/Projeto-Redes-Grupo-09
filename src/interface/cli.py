@@ -19,6 +19,7 @@ AJUDA = """Comandos:
   /help                              esta ajuda
   /quit                              encerra (LEAVE/GAME_OVER, BYE e UNREGISTER)"""
 
+
 class CLI:
     def __init__(self, app, *args):
         self.app = app
@@ -31,6 +32,7 @@ class CLI:
         else:
             self.encerrar = args[-1] if args else None
 
+# funcao que organiza os prints e demais visualizacoes da interface 
     def run(self):
         print("[CLI] /help para listar comandos")
         while self.encerrar is not None and not self.encerrar.is_set():
