@@ -134,7 +134,6 @@ class PeerTable:
                 peer["rtt"] = rtt
             peer["ultimo_contato"] = agora
             peer["ping_pendente"] = None
-            peer["ultimo_ping_envio"] = None
             peer["falhas_ping"] = 0
             return rtt
 

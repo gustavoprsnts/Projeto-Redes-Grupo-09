@@ -8,15 +8,17 @@ from conections.protocolo import agora_iso, criar_envelope
 logger = logging.getLogger(__name__)
 
 
-def _enviar_ping(peer_id, conexao, config, tabela):
+def enviar_ping(peer_id, conexao, config, tabela):
     msg = criar_envelope("PING", timestamp=agora_iso())
+    if not tabela.registrar_ping_enviado(peer_id, conexao, msg.get("msg_id")):
+        return False
     try:
         enviar_json(conexao, msg)
-        if tabela.registrar_ping_enviado(peer_id, conexao, msg.get("msg_id")):
-            logger.debug("PING enviado para %s (msg_id=%s)", peer_id, msg.get("msg_id"))
-            return True
+        logger.debug("PING enviado para %s (msg_id=%s)", peer_id, msg.get("msg_id"))
+        return True
     except Exception as erro:
         logger.warning("Falha ao enviar PING para %s: %s", peer_id, erro)
+        tabela.registrar_falha_ping(peer_id, conexao)
     return False
 
 
@@ -56,7 +58,7 @@ def loop_keepalive(config, tabela, encerrar):
                     continue
 
                 if ultimo_envio is None or (agora - ultimo_envio) >= ping_interval:
-                    _enviar_ping(peer_id, conexao, config, tabela)
+                    enviar_ping(peer_id, conexao, config, tabela)
 
         except Exception:
             logger.exception("Erro no loop de keep-alive")
