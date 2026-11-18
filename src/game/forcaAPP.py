@@ -1,4 +1,5 @@
 import logging
+import math
 import random
 import threading
 import time
@@ -350,18 +351,34 @@ class P2PForcaApp:
     def status(self):
         if self.host is not None:
             host = self.host
+            jogadores = ", ".join(host.jogadores) or "-"
+            erradas = ", ".join(host.jogo.letras_erradas) or "-"
+            if host.estado == "RUNNING" and host.turn_started_at is not None:
+                decorrido = time.monotonic() - host.turn_started_at
+                restante = max(0, math.ceil(host.turn_timeout - decorrido))
+                vez = host.jogador_da_vez()
+            else:
+                restante = "-"
+                vez = "-"
             return (
                 f"[Game] {host.game_id} (host: {self.peer_id}) status: {host.estado}\n"
-                f"[Game] Palavra: {' '.join(host.jogo.mascara()) if host.esta_em_andamento() else '-' * len(host.jogo.palavra)} "
-                f"Vidas: {host.jogo.vidas}/{self.config.get('lives', 6)}"
-                f" Jogadores: {', '.join(host.jogadores)}"
+                f"[Game] Palavra: {' '.join(host.jogo.mascara())} "
+                f"Vidas: {host.jogo.vidas}/{self.config.get('lives', 6)} "
+                f"Erradas: {erradas}\n"
+                f"[Game] Jogadores: {jogadores} Vez de: {vez} "
+                f"Tempo restante: {restante}{' s' if restante != '-' else ''}"
             )
         if self.player is not None:
+            jogadores = ", ".join(self.player.players) or "-"
+            erradas = ", ".join(self.player.wrong_letters) or "-"
+            vez = self.player.turn or "-"
+            se_eu = " (você)" if self.player.turn == self.peer_id else ""
             return (
                 f"[Game] {self.player.game_id} (host: {self.player.host_id}) status: {self.player.status}\n"
-                f"[Game] Palavra: {' '.join(self.player.masked)} Vidas: {self.player.lives}"
-                f" Jogadores: {', '.join(self.player.players)}"
-                f" Vez de: {self.player.turn}"
+                f"[Game] Palavra: {' '.join(self.player.masked)} "
+                f"Vidas: {self.player.lives} Erradas: {erradas}\n"
+                f"[Game] Jogadores: {jogadores} Vez de: {vez}{se_eu} "
+                "Tempo restante: -"
             )
         return "[Game] no active game"
 
