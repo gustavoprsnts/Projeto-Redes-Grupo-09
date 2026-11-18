@@ -235,11 +235,7 @@ def loop_accept(sock, config, tabela):
             continue
 
         # thread para evitar um processo de conexao atrasar o outro
-        t = threading.Thread(
-            target=conexao_peer,
-            args=(conexao, endereco, config, tabela),
-            daemon=True,
-        )
+        t = threading.Thread(target=conexao_peer,args=(conexao, endereco, config, tabela),daemon=True,)
         t.start()
 
 

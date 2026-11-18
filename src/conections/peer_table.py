@@ -1,6 +1,12 @@
-from enum import Enum
+import logging
 import threading
-import time 
+import time
+from enum import Enum
+
+
+logger = logging.getLogger(__name__)
+
+
 # Enum que representa os estados do peer
 class Estado(Enum):
     DISCOVERED = "DISCOVERED"
@@ -46,6 +52,7 @@ class PeerTable:
         with self.lock:
             return list(self.peers.values())
 
+#funcao para obter dos dados dos peers 
     def obter(self, peer_id):
         with self.lock:
             return self.peers.get(peer_id)
@@ -55,8 +62,21 @@ class PeerTable:
             if peer_id in self.peers:
                 self.peers[peer_id]["status"] = novo_status
 
+# funcao que pecorre a tabela e armazena os peers com conexões ativas 
+    def coletar_conexoes_ativas(self):
+        with self.lock:
+            ativas = []
+            for peer_id, peer in self.peers.items():
+                if peer.get("conexao") is not None:
+                    ativas.append((peer_id, peer["conexao"]))
+                    peer["conexao"] = None
+                    peer["direcao"] = None
+                    peer["status"] = Estado.GONE
+                    peer["proxima_tentativa"] = None
+            return ativas
+
 # funcao que verifica o erro de conxao de um peer e calcula backoff
-    def registra_erro(self,peer_id):
+    def registra_erro(self, peer_id):
         with self.lock:
             peer = self.peers.get(peer_id)
             if peer is None or peer["conexao"] is not None:
@@ -65,10 +85,18 @@ class PeerTable:
             if peer["tentativas"] >= self.max_tentativas:
                 peer["status"] = Estado.GONE
                 peer["proxima_tentativa"] = None
+                logger.info("Peer %s marcado como GONE após %d tentativas", peer_id, peer["tentativas"])
                 return
             espera = min(self.max_backoff, self.base_backoff * 2 ** (peer["tentativas"] - 1))
             peer["proxima_tentativa"] = time.time() + espera
             peer["status"] = Estado.STALE
+            logger.warning(
+                "Falha de conexão com %s (tentativa %d/%d); próximo retry em %.1fs",
+                peer_id,
+                peer["tentativas"],
+                self.max_tentativas,
+                espera,
+            )
 
         
 # funcao que olha a mensagem do randezvous e compara com a situação atual na tabela e com isso faz as ateraçoes necessarias
@@ -135,9 +163,10 @@ class PeerTable:
                 elif peer["direcao"] == manter:
                     nova_vence = False
                 else:
-                    nova_vence = True      
+                    nova_vence = True
 
             if not nova_vence:
+                logger.info("Conexão duplicada com %s: mantendo conexão existente (%s)", peer_id, peer.get("direcao"))
                 return False, conexao
 
             peer["conexao"] = conexao
@@ -146,4 +175,8 @@ class PeerTable:
             peer["status"] = Estado.CONNECTED
             peer["tentativas"] = 0
             peer["proxima_tentativa"] = None
+            if antiga is not None:
+                logger.info("Conexão com %s substituída pela direção %s", peer_id, direcao)
+            else:
+                logger.info("Peer %s conectado (%s)", peer_id, direcao)
             return True, antiga
