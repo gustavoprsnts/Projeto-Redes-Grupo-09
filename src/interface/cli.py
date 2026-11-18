@@ -22,6 +22,7 @@ AJUDA = """Comandos:
 class CLI:
     def __init__(self, app, *args):
         self.app = app
+        self.historico_rtt = {}
        
         if len(args) == 1:
             self.encerrar = args[0]
