@@ -56,7 +56,7 @@ class PeerTable:
         with self.lock:
             return list(self.peers.values())
 
-#funcao para obter dados dos peers 
+    #funcao para obter dados dos peers 
     def obter(self, peer_id, campo=None):
         with self.lock:
             peer = self.peers.get(peer_id)
@@ -65,13 +65,14 @@ class PeerTable:
             if campo is None:
                 return peer
             return peer.get(campo)
-        
+
+    #funcao para atualizar dados dos peers  
     def atualizar_estado(self, peer_id, novo_status):
         with self.lock:
             if peer_id in self.peers:
                 self.peers[peer_id]["status"] = novo_status
 
-# funcao que pecorre a tabela e armazena os peers com conexões ativas 
+    # funcao que pecorre a tabela e armazena os peers com conexões ativas 
     def coletar_conexoes_ativas(self):
         with self.lock:
             ativas = []
@@ -83,7 +84,7 @@ class PeerTable:
                     peer["status"] = Estado.GONE
                     peer["proxima_tentativa"] = None
             return ativas
- #funcao que remove a conexão da tabela apenas se ela ainda for a conexão ativa do peer.
+    #funcao que remove a conexão da tabela apenas se ela ainda for a conexão ativa do peer.
     def desconectar_conexao(self, peer_id, conexao, novo_status=Estado.STALE):
         with self.lock:
             peer = self.peers.get(peer_id)
@@ -97,7 +98,8 @@ class PeerTable:
             peer["ping_pendente"] = None
             peer["falhas_ping"] = 0
             return True
-
+        
+    #atualiza o momento do ultimo contado válido recebido por um peer
     def registrar_atividade(self, peer_id, conexao=None):
         with self.lock:
             peer = self.peers.get(peer_id)
@@ -108,9 +110,14 @@ class PeerTable:
             peer["ultimo_contato"] = time.time()
             return True
 
+    #registra um PING que acabou de ser enviado e o prepara para receber o PONG
     def registrar_ping_enviado(self, peer_id, conexao, msg_id):
         with self.lock:
+
+            #localiza o peer na tabela
             peer = self.peers.get(peer_id)
+
+            #verifica se é uma conexão ativa do peer e que esta no estado CONNECTED
             if peer is None or peer.get("conexao") is not conexao or peer.get("status") != Estado.CONNECTED:
                 return False
             agora = time.time()
@@ -118,10 +125,13 @@ class PeerTable:
             peer["ping_pendente"] = msg_id
             return True
 
-
+    #trata a resposta do PING recebido, calcula o rtt o retorna
     def registrar_pong(self, peer_id, conexao, msg_id):
         with self.lock:
+            #localiza o peer na tabela
             peer = self.peers.get(peer_id)
+
+            #verifica se é uma conexão ativa do peer
             if peer is None or peer.get("conexao") is not conexao:
                 return None
             if peer.get("ping_pendente") is not None and msg_id is not None and peer.get("ping_pendente") != msg_id:
@@ -131,6 +141,8 @@ class PeerTable:
             agora = time.time()
             rtt = None
             if peer.get("ultimo_ping_envio") is not None:
+
+                #calculo do rtt
                 rtt = max(0.0, agora - peer["ultimo_ping_envio"])
                 peer["rtt"] = rtt
             peer["ultimo_contato"] = agora
@@ -138,14 +150,21 @@ class PeerTable:
             peer["falhas_ping"] = 0
             return rtt
 
+    #a funcao croa um lista de conexões que precisam participar do keep-alive.
     def obter_conexoes_para_keepalive(self):
         with self.lock:
             itens = []
+
+            #percorre todos os peers e retorna somente os que estao no estado CONNECTED e 
+            #possuem uma conexão TCP ativa
             for peer_id, peer in self.peers.items():
                 if peer.get("status") == Estado.CONNECTED and peer.get("conexao") is not None:
                     itens.append((peer_id, peer["conexao"]))
-            return itens
 
+            #retorna uma tupla (peer_id, conexao)
+            return itens
+        
+    #consulta o estado atual do keep-alive de um peer
     def estado_keepalive(self, peer_id):
         with self.lock:
             peer = self.peers.get(peer_id)
@@ -159,11 +178,16 @@ class PeerTable:
                 "falhas_ping": peer.get("falhas_ping", 0),
             }
 
+    #contabiliza os PONGs que não chegaram para fazer o encerramento quando atingir o limite
     def registrar_falha_ping(self, peer_id, conexao):
         with self.lock:
             peer = self.peers.get(peer_id)
+
+            #confirma que a conexão informada continua ativa
             if peer is None or peer.get("conexao") is not conexao or peer.get("status") != Estado.CONNECTED:
                 return None
+
+            #incremento das falhas
             peer["falhas_ping"] = peer.get("falhas_ping", 0) + 1
             peer["ping_pendente"] = None
             peer["ultimo_ping_envio"] = None
