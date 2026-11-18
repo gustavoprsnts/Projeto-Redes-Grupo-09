@@ -30,7 +30,7 @@ class GamePlayer:
         self.last_seq = 0
         self.status = "JOINED"
         self.enviar = enviar
-
+    #funcao que envia o palpite de uma letra para o host e retorna um dicionário com o resultado do palpite
     def enviar_palpite_letra(self, letra: str) -> dict:
         mensagem = criar_envelope(
             tipo="GUESS",
@@ -44,7 +44,7 @@ class GamePlayer:
             raise RuntimeError("Nenhuma função de envio foi configurada")
 
         return self.enviar(mensagem)
-
+    #funcao que envia o palpite de uma palavra inteira para o host e retorna um dicionário com o resultado do palpite
     def enviar_palpite_palavra(self, palavra: str) -> dict:
         mensagem = criar_envelope(
             tipo="GUESS",
@@ -58,7 +58,7 @@ class GamePlayer:
             raise RuntimeError("Nenhuma função de envio foi configurada")
 
         return self.enviar(mensagem)
-
+    #funcao que atualiza o estado local do jogador com base no pacote de estado enviado pelo Host.
     def processar_state(self, mensagem: dict) -> bool:
         if mensagem["seq"] <= self.last_seq:
             return False
@@ -72,7 +72,7 @@ class GamePlayer:
         self.status = mensagem.get("status", "PLAYING")
 
         return True
-
+    #processa o retorno do palpite enviado para o host, atualizando o estado local do jogador e retornando um dicionário com o resultado do palpite
     def processar_guess_result(self, mensagem: dict) -> dict:
         if not mensagem["accepted"]:
             return {
@@ -84,7 +84,7 @@ class GamePlayer:
             "accepted": True,
             "correct": mensagem["correct"],
         }
-
+    #funcao que processa a mensagem de GAME_OVER enviada pelo host
     def processar_game_over(self, mensagem: dict) -> dict:
         if mensagem.get("type") != "GAME_OVER":
             return {
@@ -98,7 +98,7 @@ class GamePlayer:
                 "accepted": False,
                 "reason": "missing_word",
             }
-
+        #verifica se o hash da palavra recebida é igual ao hash da palavra que o host enviou no início do jogo
         hash_valido = self.verificar_hash(palavra)
         self.status = "FINISHED"
 
@@ -109,18 +109,17 @@ class GamePlayer:
             "word": palavra,
             "hash_valid": hash_valido,
         }
-
         if not hash_valido:
             resultado["warning"] = "host cheated: hash mismatch"
 
         return resultado
         
-
+    #gera o hash da palavra
     def calcular_hash(self, palavra: str) -> str:
         return hashlib.sha256(
             palavra.encode("utf-8")
         ).hexdigest()
-
+    #verufica se o hash da palavra recebida é igual ao hash da palavra que o host enviou no início do jogo
     def verificar_hash(self, palavra: str) -> bool:
         hash_recebido = self.calcular_hash(palavra)
         return hash_recebido == self.word_hash

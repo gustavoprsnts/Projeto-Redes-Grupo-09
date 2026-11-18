@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 def meu_id(config):
     return config["name"] + "@" + config["namespace"]
 
-
+# funcao que envia json para o peer
 def enviar_json(conexao, msg):
     dados = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
     conexao.sendall(dados)
 
-
+# funcao que envia json para o peer apos verificar se o peer esta conectado
 def enviar_para_peer(tabela, peer_id, msg):
     conexao = tabela.obter(peer_id, "conexao")
     if conexao is None:
@@ -207,7 +207,7 @@ def encerrar_conexao(conexao, config, peer_id, motivo):
         except Exception:
             pass
 
-
+#funcao que valida, autentica e roteia cada mensagem recebida de um peer
 def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_jogo=None):
     tipo = msg.get("type")
     meu = meu_id(config)
@@ -290,12 +290,14 @@ def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_
     logger.info("Mensagem recebida de %s (sem handler de jogo): type=%s", peer_id, tipo)
     return "ok"
 
-
+#funcao que gerencia a escuta contínua, o processamento de mensagens e o encerramento seguro da conexão de um peer.
 def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
     logger.info("Iniciando loop de recepção para %s", peer_id)
     motivo_estado = Estado.STALE
     try:
+        #loop infinito para escutar mensagens do peer
         while True:
+            #tenta ler a proxima linha enviada pelo peer
             try:
                 linha = ler_linha(conexao)
             except (ConnectionAbortedError, ConnectionResetError, OSError) as erro:
@@ -308,7 +310,7 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
             if not linha:
                 logger.info("Conexão com %s fechada pelo peer", peer_id)
                 break
-
+            #tenta converter o JSON em um dicionario pyhon
             try:
                 msg = json.loads(linha)
             except json.JSONDecodeError:
@@ -329,10 +331,11 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
             if not isinstance(msg, dict):
                 logger.warning("Mensagem inválida recebida de %s (não é objeto JSON)", peer_id)
                 continue
-
+            #registra a atividade do peer na tabela de conexões
             tabela.registrar_atividade(peer_id, conexao)
 
             try:
+                # Encaminha a mensagem para ser validada e despachada
                 resultado = _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_jogo=handler_jogo)
             except Exception:
                 logger.exception("Erro ao processar mensagem de %s: %s", peer_id, msg.get("type"))

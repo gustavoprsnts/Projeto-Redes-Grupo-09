@@ -3,6 +3,7 @@ import re
 import unicodedata
 
 class Hangman:
+    #funcao que inicializa o jogo com a palavra a ser adivinhada, o número de vidas e o estado do jogo
     def __init__(self, palavra: str, vidas: int = 6):
         self.palavra = self.normaliza_palavra(palavra)
         self.vidas = vidas
@@ -29,7 +30,7 @@ class Hangman:
 
         raise ValueError("Palavra inválida!")
 
-    
+    #funcao que processa o palpite de uma letra, atualiza o estado do jogo e retorna um dicionário com o resultado do palpite
     def palpite(self, letra: str) -> dict:
         if self.estado != "RUNNING":
             return {"accepted": False, "reason": "game_not_running"}
@@ -56,7 +57,7 @@ class Hangman:
             "status": self.estado,
         }
         
-
+    #funcao que retorna a palavra com as letras acertadas e as letras não acertadas substituidas por "_"
     def mascara(self) -> str:
         mascara = ""
         for letra in self.palavra:
@@ -66,7 +67,7 @@ class Hangman:
                 mascara += "_"
 
         return mascara
-
+    #funcao que processa o palpite de uma palavra inteira
     def tentar_palavra(self, palpite_palavra: str) -> dict:
         if self.estado != "RUNNING":
             return {"accepted": False, "reason": "game_not_running"}
@@ -92,10 +93,11 @@ class Hangman:
             "correct": False,
             "status": self.estado,
         }
-
+    #funcao que retorna o hash da palavra para ser usado na comunicação entre peers
     def word_hash(self) -> str:
         return hashlib.sha256(self.palavra.encode("utf-8")).hexdigest()
 
+    #funcao que verifica se o jogo foi vencido, perdido ou ainda está em andamento
     def verifica_estado(self) -> str:
         if self.mascara() == self.palavra:
             self.estado = "WON"
@@ -105,6 +107,7 @@ class Hangman:
 
         return self.estado
 
+    #retorna um dicionario com o estado atual do jogo, incluindo a palavra mascarada, as letras erradas, o número de vidas restantes e o status do jogo
     def snapshot(self) -> dict:
         return{
             "masked": self.mascara(),
