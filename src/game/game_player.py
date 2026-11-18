@@ -1,7 +1,7 @@
 from collections.abc import Callable
 import hashlib
 
-from src.protocol import criar_envelope
+from conections.protocolo import criar_envelope
 
 class GamePlayer:
     def __init__(

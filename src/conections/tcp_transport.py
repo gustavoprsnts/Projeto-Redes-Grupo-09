@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 MAX_LINE_LENGTH = 32768
 MessageHandler = Callable[[dict], Iterable[dict] | dict | None]
 
-
+#classe que encapsula uma conexao tcp para a troca de mensagens por linhas 
 class JsonLineConnection:
     def __init__(self, sock: socket.socket):
         self.sock = sock
@@ -46,7 +46,7 @@ class JsonLineConnection:
             pass
         self.sock.close()
 
-
+# classe que gerencia asconexoes tcp e processa as mensagens recebidas 
 class TcpPeerServer:
     def __init__(
         self,
@@ -131,7 +131,7 @@ class TcpPeerServer:
         for connection in clients:
             connection.close()
 
-
+# classe que permite a conexao a um peer para troca de mensagens 
 class TcpPeerClient:
     def __init__(self, on_message: Callable[[dict], None]):
         self.on_message = on_message

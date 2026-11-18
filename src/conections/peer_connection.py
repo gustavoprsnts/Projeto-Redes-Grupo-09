@@ -4,10 +4,30 @@ import socket
 import threading
 import uuid
 
+from conections.peer_table import Estado
+from conections.protocolo import criar_envelope
 from conections.rendezvous_connection import ler_linha
 
 
 logger = logging.getLogger(__name__)
+
+
+# funcao para guardar o id do peer
+def meu_id(config):
+    return config["name"] + "@" + config["namespace"]
+
+
+def enviar_json(conexao, msg):
+    dados = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+    conexao.sendall(dados)
+
+
+def enviar_para_peer(tabela, peer_id, msg):
+    conexao = tabela.obter(peer_id, "conexao")
+    if conexao is None:
+        raise ConnectionError(f"Peer {peer_id} não está conectado")
+    enviar_json(conexao, msg)
+    return True
 
 
 # Faz o handshake com o peer que acabou de se conectar
@@ -52,7 +72,7 @@ def handshake(conexao, endereco, config):
             "ttl": 1,
         }
 
-        conexao.sendall((json.dumps(resposta) + "\n").encode("UTF-8"))
+        enviar_json(conexao, resposta)
 
         # tira o timeout para abrir a conexão
         conexao.settimeout(None)
@@ -66,7 +86,10 @@ def handshake(conexao, endereco, config):
 
     except json.JSONDecodeError:
         logger.warning("Erro de handshake com %s: bad_json", endereco)
-        conexao.close()
+        try:
+            conexao.close()
+        except Exception:
+            pass
         return None
     except Exception as erro:
         logger.exception("Erro no handshake de entrada com %s: %s", endereco, erro)
@@ -75,11 +98,6 @@ def handshake(conexao, endereco, config):
         except Exception:
             pass
         return None
-
-
-# funcao para guardar o id do peer
-def meu_id(config):
-    return config["name"] + "@" + config["namespace"]
 
 
 # funcao que inicia a conexão e envia o pacote inicial HELLO
@@ -98,7 +116,7 @@ def handshake_saida(ip, porta, peer_id_esperado, config):
             "features": ["hangman"],
             "ttl": 1,
         }
-        conexao.sendall((json.dumps(hello) + "\n").encode("UTF-8"))
+        enviar_json(conexao, hello)
 
         linha = ler_linha(conexao)
         if not linha:
@@ -163,17 +181,19 @@ def handshake_saida(ip, porta, peer_id_esperado, config):
 # funcao que envia o bye do bye bye_ok
 def encerrar_conexao(conexao, config, peer_id, motivo):
     try:
-        bye = {
-            "type": "BYE",
-            "msg_id": str(uuid.uuid4()),
-            "src": meu_id(config),
-            "dst": peer_id,
-            "reason": motivo,
-            "ttl": 1,
-        }
-        conexao.sendall((json.dumps(bye) + "\n").encode("UTF-8"))
-        conexao.settimeout(2)
-        ler_linha(conexao)
+        bye = criar_envelope(
+            "BYE",
+            src=meu_id(config),
+            dst=peer_id,
+            msg_id=str(uuid.uuid4()),
+            reason=motivo,
+        )
+        enviar_json(conexao, bye)
+        try:
+            conexao.settimeout(2)
+            ler_linha(conexao)
+        except Exception:
+            pass
     except Exception as erro:
         logger.debug("Falha ao encerrar conexão com %s (%s): %s", peer_id, motivo, erro)
     finally:
@@ -183,12 +203,120 @@ def encerrar_conexao(conexao, config, peer_id, motivo):
             pass
 
 
+def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_jogo=None):
+    tipo = msg.get("type")
+    meu = meu_id(config)
+
+    if tipo == "PING":
+        resposta = criar_envelope(
+            "PONG",
+            src=meu,
+            dst=peer_id,
+            msg_id=msg.get("msg_id"),
+            timestamp=msg.get("timestamp"),
+        )
+        enviar_json(conexao, resposta)
+        return "ok"
+
+    if tipo == "PONG":
+        rtt = tabela.registrar_pong(peer_id, conexao, msg.get("msg_id"))
+        if rtt is not None:
+            logger.debug("PONG recebido de %s (rtt=%.3fs)", peer_id, rtt)
+        else:
+            logger.debug("PONG recebido de %s", peer_id)
+        return "ok"
+
+    if tipo == "BYE":
+        try:
+            resposta = criar_envelope(
+                "BYE_OK",
+                src=meu,
+                dst=peer_id,
+                msg_id=msg.get("msg_id"),
+            )
+            enviar_json(conexao, resposta)
+        except Exception as erro:
+            logger.debug("Falha ao enviar BYE_OK para %s: %s", peer_id, erro)
+        logger.info("BYE recebido de %s (reason=%s)", peer_id, msg.get("reason"))
+        return "bye"
+
+    if tipo in {"BYE_OK", "ERROR", "HELLO", "HELLO_OK"}:
+        logger.debug("Mensagem de controle recebida de %s: type=%s", peer_id, tipo)
+        return "ok"
+
+    if handler_jogo is not None:
+        try:
+            handler_jogo(msg, peer_id, config, tabela)
+        except Exception:
+            logger.exception("Erro no handler de jogo ao processar mensagem de %s (type=%s)", peer_id, tipo)
+        return "ok"
+
+    logger.info("Mensagem recebida de %s (sem handler de jogo): type=%s", peer_id, tipo)
+    return "ok"
+
+
+def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
+    logger.info("Iniciando loop de recepção para %s", peer_id)
+    motivo_estado = Estado.STALE
+    try:
+        while True:
+            try:
+                linha = ler_linha(conexao)
+            except (ConnectionAbortedError, ConnectionResetError, OSError) as erro:
+                logger.info("Conexão com %s encerrada durante leitura: %s", peer_id, erro)
+                break
+            except ValueError as erro:
+                logger.warning("Erro de framing com %s: %s", peer_id, erro)
+                break
+
+            if not linha:
+                logger.info("Conexão com %s fechada pelo peer", peer_id)
+                break
+
+            try:
+                msg = json.loads(linha)
+            except json.JSONDecodeError:
+                logger.warning("Mensagem JSON inválida recebida de %s", peer_id)
+                continue
+
+            if not isinstance(msg, dict):
+                logger.warning("Mensagem inválida recebida de %s (não é objeto JSON)", peer_id)
+                continue
+
+            tabela.registrar_atividade(peer_id, conexao)
+
+            try:
+                resultado = _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_jogo=handler_jogo)
+            except Exception:
+                logger.exception("Erro ao processar mensagem de %s: %s", peer_id, msg.get("type"))
+                continue
+
+            if resultado == "bye":
+                motivo_estado = Estado.GONE
+                break
+    finally:
+        removida = tabela.desconectar_conexao(peer_id, conexao, novo_status=motivo_estado)
+        try:
+            conexao.close()
+        except Exception:
+            pass
+        if removida:
+            logger.info("Conexão com %s removida da tabela (estado=%s)", peer_id, motivo_estado.value)
+        else:
+            logger.debug("Conexão encerrada para %s, mas já não era a conexão ativa na tabela", peer_id)
+
+
 # funcao que armazena peer conectado no peertable
-def guardar_conexao(tabela, config, peer, conexao):
+def guardar_conexao(tabela, config, peer, conexao, handler_jogo=None):
     peer_id = peer["peer_id"]
     venceu, perdedora = tabela.registrar_conexao(
         peer_id, conexao, peer["direcao"], peer["tem_hangman"]
     )
+
+    if not venceu:
+        logger.info("Conexão de entrada/saída com %s rejeitada por duplicata; encerrando", peer_id)
+        encerrar_conexao(conexao, config, peer_id, "duplicate")
+        return False
 
     if perdedora is not None:
         try:
@@ -202,27 +330,35 @@ def guardar_conexao(tabela, config, peer, conexao):
         )
         encerrar_conexao(perdedora, config, peer_id, "duplicate")
 
+    threading.Thread(
+        target=loop_receber,
+        args=(conexao, peer_id, config, tabela, handler_jogo),
+        daemon=True,
+        name=f"rx-{peer_id}",
+    ).start()
+    return True
+
 
 # funcao que coordena a parte do envio do Hello
-def conectar_e_registrar(peer_id, ip, porta, config, tabela):
+def conectar_e_registrar(peer_id, ip, porta, config, tabela, handler_jogo=None):
     resultado = handshake_saida(ip, porta, peer_id, config)
     if resultado is None:
         tabela.registra_erro(peer_id)
         return
-    guardar_conexao(tabela, config, resultado, resultado["conexao"])
+    guardar_conexao(tabela, config, resultado, resultado["conexao"], handler_jogo=handler_jogo)
 
 
 # funcao que coordena a parte de chegada do handshake
-def conexao_peer(conexao, endereco, config, tabela):
+def conexao_peer(conexao, endereco, config, tabela, handler_jogo=None):
     peer = handshake(conexao, endereco, config)
     if not peer:
         return None
-    guardar_conexao(tabela, config, peer, conexao)
+    guardar_conexao(tabela, config, peer, conexao, handler_jogo=handler_jogo)
     return peer
 
 
 # funcao com o loop para lidar com a aceitação de conexoes dos peers
-def loop_accept(sock, config, tabela):
+def loop_accept(sock, config, tabela, handler_jogo=None):
     logger.info("Peer server aceitando conexões na porta %s", config.get("listen_port"))
     while True:
         try:
@@ -235,12 +371,16 @@ def loop_accept(sock, config, tabela):
             continue
 
         # thread para evitar um processo de conexao atrasar o outro
-        t = threading.Thread(target=conexao_peer,args=(conexao, endereco, config, tabela),daemon=True,)
+        t = threading.Thread(
+            target=conexao_peer,
+            args=(conexao, endereco, config, tabela, handler_jogo),
+            daemon=True,
+        )
         t.start()
 
 
 # funcao que inicia conexao que sera usada nos peers
-def iniciar_servidor(config, tabela):
+def iniciar_servidor(config, tabela, handler_jogo=None):
     # criacao de socket tcp
     socketTcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # permite reusar a porta logo após reiniciar o programa
@@ -252,7 +392,7 @@ def iniciar_servidor(config, tabela):
     logger.info("Peer server escutando em 0.0.0.0:%s", config["listen_port"])
     # thread para rodar as funcoes sem travar o programa principal
     thread = threading.Thread(
-        target=loop_accept, args=(socketTcp, config, tabela), daemon=True
+        target=loop_accept, args=(socketTcp, config, tabela, handler_jogo), daemon=True
     )
     thread.start()
     return socketTcp

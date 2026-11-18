@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 # funcao que sincroniza o Randezvous com a Peertable
-def peer_client(config, tabela, encerrar):
+def peer_client(config, tabela, encerrar, handler_jogo=None):
     logger.info("Iniciando loop de descoberta de peers (intervalo=%ss)", config.get("discover_interval"))
     while not encerrar.is_set():
         try:
@@ -33,7 +33,7 @@ def peer_client(config, tabela, encerrar):
                 for peer_id, ip, porta in conectar:
                     threading.Thread(
                         target=conectar_e_registrar,
-                        args=(peer_id, ip, porta, config, tabela),
+                        args=(peer_id, ip, porta, config, tabela, handler_jogo),
                         daemon=True,
                     ).start()
         except Exception:

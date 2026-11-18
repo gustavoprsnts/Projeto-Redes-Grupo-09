@@ -1,4 +1,4 @@
-from src.protocol import criar_envelope
+from conections.protocolo import criar_envelope
 
 
 mensagem = criar_envelope(

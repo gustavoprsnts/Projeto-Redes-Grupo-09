@@ -3,7 +3,7 @@ from time import monotonic
 from uuid import uuid4
 
 from src.game.hangman import Hangman
-from src.protocol import criar_envelope
+from conections.protocolo import criar_envelope
 
 IDLE = "IDLE"
 OPEN = "OPEN"

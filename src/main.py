@@ -3,6 +3,7 @@ import signal
 import sys
 import threading
 
+from conections.keep_alive import loop_keepalive
 from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
 from conections.peer_table import PeerTable
@@ -70,6 +71,12 @@ def main():
             args=(config, encerrar, ttl),
             daemon=True,
             name="rdv-refresh",
+        ).start()
+        threading.Thread(
+            target=loop_keepalive,
+            args=(config, tabela, encerrar),
+            daemon=True,
+            name="keep-alive",
         ).start()
 
         logger.info("Peer em execução. Pressione Ctrl+C para encerrar.")

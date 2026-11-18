@@ -39,6 +39,10 @@ class PeerTable:
             "tem_hangman": False,
             "tentativas": 0,
             "proxima_tentativa": None,
+            "ultimo_contato": None,
+            "ultimo_ping_envio": None,
+            "ping_pendente": None,
+            "falhas_ping": 0,
         }
     
     def direcao(self, peer_id):
@@ -52,10 +56,15 @@ class PeerTable:
         with self.lock:
             return list(self.peers.values())
 
-#funcao para obter dos dados dos peers 
-    def obter(self, peer_id):
+#funcao para obter dados dos peers (registro completo ou campo específico)
+    def obter(self, peer_id, campo=None):
         with self.lock:
-            return self.peers.get(peer_id)
+            peer = self.peers.get(peer_id)
+            if peer is None:
+                return None
+            if campo is None:
+                return peer
+            return peer.get(campo)
         
     def atualizar_estado(self, peer_id, novo_status):
         with self.lock:
@@ -74,6 +83,92 @@ class PeerTable:
                     peer["status"] = Estado.GONE
                     peer["proxima_tentativa"] = None
             return ativas
+
+    def desconectar_conexao(self, peer_id, conexao, novo_status=Estado.STALE):
+        """Remove a conexão da tabela apenas se ela ainda for a conexão ativa do peer."""
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None or peer.get("conexao") is not conexao:
+                return False
+            peer["conexao"] = None
+            peer["direcao"] = None
+            peer["status"] = novo_status
+            peer["proxima_tentativa"] = None
+            peer["ultimo_ping_envio"] = None
+            peer["ping_pendente"] = None
+            peer["falhas_ping"] = 0
+            return True
+
+    def registrar_atividade(self, peer_id, conexao=None):
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None:
+                return False
+            if conexao is not None and peer.get("conexao") is not conexao:
+                return False
+            peer["ultimo_contato"] = time.time()
+            return True
+
+    def registrar_ping_enviado(self, peer_id, conexao, msg_id):
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None or peer.get("conexao") is not conexao or peer.get("status") != Estado.CONNECTED:
+                return False
+            agora = time.time()
+            peer["ultimo_ping_envio"] = agora
+            peer["ping_pendente"] = msg_id
+            return True
+
+    def registrar_pong(self, peer_id, conexao, msg_id):
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None or peer.get("conexao") is not conexao:
+                return None
+            if peer.get("ping_pendente") is not None and msg_id is not None and peer.get("ping_pendente") != msg_id:
+                # PONG inesperado/atrasado: ainda conta como atividade
+                peer["ultimo_contato"] = time.time()
+                return None
+            agora = time.time()
+            rtt = None
+            if peer.get("ultimo_ping_envio") is not None:
+                rtt = max(0.0, agora - peer["ultimo_ping_envio"])
+                peer["rtt"] = rtt
+            peer["ultimo_contato"] = agora
+            peer["ping_pendente"] = None
+            peer["ultimo_ping_envio"] = None
+            peer["falhas_ping"] = 0
+            return rtt
+
+    def obter_conexoes_para_keepalive(self):
+        with self.lock:
+            itens = []
+            for peer_id, peer in self.peers.items():
+                if peer.get("status") == Estado.CONNECTED and peer.get("conexao") is not None:
+                    itens.append((peer_id, peer["conexao"]))
+            return itens
+
+    def estado_keepalive(self, peer_id):
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None:
+                return None
+            return {
+                "conexao": peer.get("conexao"),
+                "status": peer.get("status"),
+                "ultimo_ping_envio": peer.get("ultimo_ping_envio"),
+                "ping_pendente": peer.get("ping_pendente"),
+                "falhas_ping": peer.get("falhas_ping", 0),
+            }
+
+    def registrar_falha_ping(self, peer_id, conexao):
+        with self.lock:
+            peer = self.peers.get(peer_id)
+            if peer is None or peer.get("conexao") is not conexao or peer.get("status") != Estado.CONNECTED:
+                return None
+            peer["falhas_ping"] = peer.get("falhas_ping", 0) + 1
+            peer["ping_pendente"] = None
+            peer["ultimo_ping_envio"] = None
+            return peer["falhas_ping"]
 
 # funcao que verifica o erro de conxao de um peer e calcula backoff
     def registra_erro(self, peer_id):
@@ -169,12 +264,17 @@ class PeerTable:
                 logger.info("Conexão duplicada com %s: mantendo conexão existente (%s)", peer_id, peer.get("direcao"))
                 return False, conexao
 
+            agora = time.time()
             peer["conexao"] = conexao
             peer["direcao"] = direcao
             peer["tem_hangman"] = tem_hangman
             peer["status"] = Estado.CONNECTED
             peer["tentativas"] = 0
             peer["proxima_tentativa"] = None
+            peer["ultimo_contato"] = agora
+            peer["ultimo_ping_envio"] = None
+            peer["ping_pendente"] = None
+            peer["falhas_ping"] = 0
             if antiga is not None:
                 logger.info("Conexão com %s substituída pela direção %s", peer_id, direcao)
             else:
