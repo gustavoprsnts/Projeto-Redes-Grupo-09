@@ -9,6 +9,7 @@ from conections.protocolo import (
     ENDERECO_OPCIONAL,
     OBRIGATORIOS,
     SEM_ENDERECO,
+    agora_iso,
     criar_envelope,
 )
 from conections.rendezvous_connection import ler_linha
@@ -396,6 +397,13 @@ def guardar_conexao(tabela, config, peer, conexao, handler_jogo=None):
         daemon=True,
         name=f"rx-{peer_id}",
     ).start()
+
+    ping = criar_envelope("PING", timestamp=agora_iso())
+    if tabela.registrar_ping_enviado(peer_id, conexao, ping["msg_id"]):
+        try:
+            enviar_json(conexao, ping)
+        except Exception:
+            tabela.registrar_falha_ping(peer_id, conexao)
     return True
 
 

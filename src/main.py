@@ -10,7 +10,7 @@ from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
 from conections.peer_table import PeerTable
 from conections.rendezvous_connection import carrega_json, refresh_register, register, unregister
-from src.forcaAPP import P2PForcaApp
+from forcaAPP import P2PForcaApp
 from interface.cli import CLI
 
 

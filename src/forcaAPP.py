@@ -199,6 +199,17 @@ class P2PForcaApp:
             time.sleep(0.5)
 
     def listar_partidas(self, timeout=1.0):
+        deadline = time.monotonic() + min(timeout, 2.0)
+        while time.monotonic() < deadline:
+            peers = [
+                peer_id
+                for peer_id in self.tabela.peers
+                if self.tabela.obter(peer_id, "conexao") is not None
+            ]
+            if peers:
+                break
+            time.sleep(0.05)
+
         peers = [peer_id for peer_id in self.tabela.peers if self.tabela.obter(peer_id, "conexao") is not None]
         resposta = {}
         for peer_id in peers:
