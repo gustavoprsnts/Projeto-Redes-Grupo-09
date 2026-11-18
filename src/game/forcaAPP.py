@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class P2PForcaApp:
+    #funcao que inicializa a integraçao do p2p e seus atributos de controle 
     def __init__(self, config, tabela):
         self.config = config
         self.tabela = tabela
@@ -28,9 +29,11 @@ class P2PForcaApp:
         self.pending = {}
         self.games_by_host = {}
 
+ # funcao para envio de mensagem para um peer especifico 
     def enviar(self, peer_id, message):
         return enviar_para_peer(self.tabela, peer_id, message)
-
+    
+ #funcao que processa respostas esperadas e libera threads aguardando retorno
     def resolver_pendente(self, message, peer_id):
         token = message.get("msg_id")
         pendente = self.pending.get(token)
@@ -67,6 +70,7 @@ class P2PForcaApp:
         event.set()
         return True
 
+# funcao que lista os peers conhecidos na rede filtrando por namespace
     def listar_peers(self, namespace=""):
         peers = []
         namespace = namespace.strip().lower() if namespace else ""
@@ -83,6 +87,7 @@ class P2PForcaApp:
             })
         return peers
 
+# funcao que lista apenas os peers com conexao ativa no momento
     def listar_conexoes(self):
         conexoes = []
         for peer_id, peer in ((peer["peer_id"], peer) for peer in self.tabela.listar()):
@@ -96,6 +101,8 @@ class P2PForcaApp:
                 })
         return conexoes
 
+
+# funcao que listas os rtt de cada peer
     def listar_rtt(self):
         return [
             {"peer_id": peer["peer_id"], "rtt": peer.get("rtt")}
@@ -103,6 +110,7 @@ class P2PForcaApp:
             if peer.get("rtt") is not None
         ]
 
+# funcao que consulta o rendezvous e sincroniza as conexoes com os peers
     def reconectar(self):
         from conections.rendezvous_connection import discover
         from conections.peer_connection import conectar_e_registrar, encerrar_conexao
@@ -125,6 +133,8 @@ class P2PForcaApp:
             ).start()
         return True, {"conectar": len(conectar), "fechar": len(fechar), "peers": len(self.tabela.listar())}
 
+
+# funcao que altera o nivel de exibicao dos logs da aplicacao
     def definir_log_level(self, nivel):
         niveis = {
             "DEBUG": logging.DEBUG,
@@ -138,6 +148,7 @@ class P2PForcaApp:
         logging.getLogger().setLevel(niveis[nivel])
         return True, nivel
 
+# funcao que encerra de forma limpa uma partida ativa como host ou jogador
     def encerramento_limpo(self):
         if self.host is not None:
             return self.cancelar()
@@ -145,6 +156,7 @@ class P2PForcaApp:
             return self.sair()
         return True
 
+# funcao que permite o envio de mensagem para todos os jogadores da sala 
     def broadcast(self, message_type, message_fields):
         if self.host is None:
             return
@@ -161,6 +173,7 @@ class P2PForcaApp:
             except Exception:
                 logger.warning("Falha ao enviar %s para %s", message_type, player_id)
 
+# funcao que cria uma nova partida
     def criar(self, palavra=None, max_players=None, random_word=False):
         if self.host is not None or self.player is not None:
             return False, "uma partida já está ativa"
@@ -192,6 +205,8 @@ class P2PForcaApp:
             self.host = None
             return False, str(exc)
 
+        
+# funcao que possibilita o cancelamento da partida 
     def cancelar(self):
         if self.host is None:
             return False
@@ -205,6 +220,7 @@ class P2PForcaApp:
         self.host = None
         return True
 
+# funcao que permite e trata as condicoes de iniciio da partida 
     def iniciar(self):
         if self.host is None:
             return False, "nenhuma partida hospedada"
@@ -219,6 +235,7 @@ class P2PForcaApp:
         threading.Thread(target=self._turn_timeout_loop, daemon=True).start()
         return True, self.host.game_id
 
+# # funcao que monitora em loop o tempo limite de cada turno
     def _turn_timeout_loop(self):
         host = self.host
         if host is None:
@@ -236,6 +253,7 @@ class P2PForcaApp:
                         pass
             time.sleep(0.5)
 
+# funcao que lista as partidas disponiveis 
     def listar_partidas(self, timeout=1.0):
         deadline = time.monotonic() + min(timeout, 2.0)
         while time.monotonic() < deadline:
@@ -276,6 +294,7 @@ class P2PForcaApp:
         }
         return resposta
 
+# funcao para a entrada na partida 
     def entrar(self, host_id, timeout=2.0):
         if self.host is not None or self.player is not None:
             return False, "já participa de uma partida"
@@ -306,6 +325,7 @@ class P2PForcaApp:
             return False, "timeout"
         return True if response.get("status") == "OK" else False, response
 
+# funcao de sair da partida 
     def sair(self):
         if self.player is not None:
             host_id = self.player.host_id
@@ -326,6 +346,7 @@ class P2PForcaApp:
         self.player = None
         return True
 
+# funcao de chutar uma letra 
     def guess(self, letter=None, word=None):
         if self.player is None:
             return False, "não está em uma partida"
@@ -348,6 +369,7 @@ class P2PForcaApp:
         self.pending.pop(message["msg_id"], None)
         return event.is_set(), response
 
+# funcao que permite a visualização dos status da partida 
     def status(self):
         if self.host is not None:
             host = self.host
@@ -390,6 +412,7 @@ class P2PForcaApp:
             )
         return "[Game] no active game"
 
+#funcao que realiza o gameover e caso de vitoria 
     def _game_over(self, result, reason=None):
         if self.host is None:
             return lambda _peer: None
@@ -412,6 +435,7 @@ class P2PForcaApp:
             )
         return make
 
+# funcao principal que recebe e roteia todas as mensagens vindas da rede p2p
     def handler(self, message, peer_id, config, tabela):
         type_name = message.get("type")
 
