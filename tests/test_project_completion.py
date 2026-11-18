@@ -1,4 +1,5 @@
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(SRC))
 from conections.peer_table import Estado, PeerTable
 from forcaAPP import P2PForcaApp
 from game.game_host import GameHost
+from game.game_player import GamePlayer
 
 
 class FakeTable(PeerTable):
@@ -122,6 +124,61 @@ class AppCompletionTests(unittest.TestCase):
         self.assertTrue(game_overs)
         self.assertEqual(game_overs[0]["result"], "ABORTED")
         self.assertIsNone(self.app.host)
+
+    def test_status_host_running_shows_game_details_and_remaining_time(self):
+        assert self.app.criar("banana")[0]
+        self.app.host.adicionar_jogador("bob@CIC")
+        self.app.host.iniciar()
+        self.app.host.jogo.palpite("x")
+        self.app.host.turn_started_at = time.monotonic() - 2
+
+        status = self.app.status()
+
+        self.assertIn(f"status: {self.app.host.estado}", status)
+        self.assertIn("Palavra: _ _ _ _ _ _", status)
+        self.assertIn("Vidas: 5/6", status)
+        self.assertIn("Erradas: x", status)
+        self.assertIn("Jogadores: bob@CIC", status)
+        self.assertIn("Vez de: bob@CIC", status)
+        self.assertIn("Tempo restante:", status)
+        self.assertNotIn("Tempo restante: -", status)
+
+    def test_status_host_open_uses_placeholder_for_turn_details(self):
+        assert self.app.criar("banana")[0]
+
+        status = self.app.status()
+
+        self.assertIn("status: OPEN", status)
+        self.assertIn("Jogadores: -", status)
+        self.assertIn("Vez de: -", status)
+        self.assertIn("Tempo restante: -", status)
+
+    def test_status_player_shows_received_state(self):
+        self.app.player = GamePlayer(
+            "alice@CIC",
+            "bob@CIC/12345678",
+            "bob@CIC",
+            "hash",
+            6,
+            5,
+            ["alice@CIC", "carol@CIC"],
+        )
+        self.app.player.processar_state({
+            "seq": 1,
+            "masked": "_ a _ a _ a",
+            "wrong_letters": ["e"],
+            "lives": 5,
+            "turn": "alice@CIC",
+            "players": ["alice@CIC", "carol@CIC"],
+        })
+
+        status = self.app.status()
+
+        self.assertIn("Palavra: _   a   _   a   _   a", status)
+        self.assertIn("Vidas: 5", status)
+        self.assertIn("Erradas: e", status)
+        self.assertIn("Vez de: alice@CIC (você)", status)
+        self.assertIn("Tempo restante: -", status)
 
 
 if __name__ == "__main__":
