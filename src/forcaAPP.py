@@ -15,6 +15,7 @@ from game.game_player import GamePlayer
 logger = logging.getLogger(__name__)
 
 
+
 class P2PForcaApp:
     def __init__(self, config, tabela):
         self.config = config
@@ -28,6 +29,42 @@ class P2PForcaApp:
 
     def enviar(self, peer_id, message):
         return enviar_para_peer(self.tabela, peer_id, message)
+
+    def resolver_pendente(self, message, peer_id):
+        token = message.get("msg_id")
+        pendente = self.pending.get(token)
+
+        if pendente is None:
+            return False
+
+        event, owner, response = pendente
+
+        if owner != peer_id:
+            return False
+        if message["type"] == "GAME_LIST_OK":
+            
+            response.extend(message.get("games", []))
+
+        elif message["type"] == "JOIN_OK":
+            response.update(
+                status="OK",
+                message=message,
+            )
+
+        elif message["type"] == "JOIN_ERR":
+            response.update(
+                status="ERR",
+                reason=message.get("reason"),
+            )
+
+        elif message["type"] == "GUESS_RESULT":
+            response.update(message)
+
+        else:
+            return False
+
+        event.set()
+        return True
 
     def listar_peers(self, namespace=""):
         peers = []
@@ -212,10 +249,12 @@ class P2PForcaApp:
 
         peers = [peer_id for peer_id in self.tabela.peers if self.tabela.obter(peer_id, "conexao") is not None]
         resposta = {}
+        tokens_peers = {}
         for peer_id in peers:
             event = threading.Event()
             token = criar_envelope("GAME_LIST")["msg_id"]
             self.pending[token] = (event, peer_id, [])
+            tokens_peers[peer_id] = token
             message = criar_envelope("GAME_LIST", src=self.peer_id, dst=peer_id, msg_id=token)
             try:
                 self.enviar(peer_id, message)
@@ -224,12 +263,11 @@ class P2PForcaApp:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             time.sleep(0.05)
-        for peer_id in peers:
-            for token, (event, owner, games) in list(self.pending.items()):
-                if owner == peer_id:
-                    if peer_id not in resposta:
-                        resposta[peer_id] = games
-                    self.pending.pop(token, None)
+        for peer_id, token in tokens_peers.items():
+            pendente = self.pending.pop(token, None)
+            if pendente is not None:
+                event, owner, games = pendente
+                resposta[peer_id] = games
         self.games_by_host = {
             game["host"]: game
             for games in resposta.values()
@@ -354,7 +392,7 @@ class P2PForcaApp:
 
         if type_name == "PEER_DOWN":
             if self.host is not None and peer_id in self.host.jogadores:
-                self.host.remover_jogador(peer_id)
+                self.host.remover_jogador(peer_id, desconexao= True)
                 if not self.host.jogadores:
                     self.host = None
                 else:
@@ -391,13 +429,12 @@ class P2PForcaApp:
             return
 
         if type_name == "GAME_LIST_OK":
-            for token, (event, owner, response) in list(self.pending.items()):
-                if owner == peer_id:
-                    response.extend(message.get("games", []))
-                    event.set()
+            self.resolver_pendente(message,peer_id)
             return
 
         if type_name == "JOIN":
+            reason = None
+
             if self.host is None:
                 reason = "unknown_game"
             elif message.get("game_id") != self.host.game_id:
@@ -405,20 +442,35 @@ class P2PForcaApp:
             elif self.host.estado == "FINISHED":
                 reason = "game_finished"
             elif self.host.estado == "RUNNING":
-                reason = "already_joined" if peer_id in self.host.jogadores else "game_running"
-                if reason == "already_joined":
+                if peer_id in self.host.desconectados:
+                    self.host.desconectados.remove(peer_id)
+                    self.host.jogadores.append(peer_id)
                     response = criar_envelope(
-                        "JOIN_OK", src=self.peer_id, dst=peer_id,
-                        msg_id=message.get("msg_id"), game_id=self.host.game_id,
-                        players=self.host.jogadores.copy(), rejoin=True,
+                        "JOIN_OK",
+                        src=self.peer_id,
+                        dst=peer_id,
+                        msg_id=message.get("msg_id"),
+                        game_id=self.host.game_id,
+                        players=self.host.jogadores.copy(),
+                        rejoin=True,
                     )
                     self.enviar(peer_id, response)
-                    self.enviar(peer_id, self.host.state(peer_id))
+
+                    self.host.seq += 1
+                    for player_id in self.host.jogadores:
+                        self.enviar(player_id, self.host.state(player_id))
                     return
-            elif len(self.host.jogadores) >= self.host.max_jogadores:
-                reason = "game_full"
-            else:
-                if not self.host.adicionar_jogador(peer_id):
+
+                if peer_id in self.host.jogadores:
+                    reason = "already_joined"
+                else:
+                    reason = "game_running"
+            elif self.host.estado == "OPEN":
+                if peer_id in self.host.jogadores:
+                    reason = "already_joined"
+                elif len(self.host.jogadores) >= self.host.max_jogadores:
+                    reason = "game_full"
+                elif not self.host.adicionar_jogador(peer_id):
                     reason = "game_full"
                 else:
                     response = criar_envelope(
@@ -427,20 +479,24 @@ class P2PForcaApp:
                         players=self.host.jogadores.copy(), rejoin=False,
                     )
                     self.enviar(peer_id, response)
+
+                    self.host.seq += 1
+                    for player_id in self.host.jogadores:
+                        self.enviar(player_id, self.host.state(player_id))
                     return
-            response = criar_envelope(
-                "JOIN_ERR", src=self.peer_id, dst=peer_id,
-                msg_id=message.get("msg_id"), game_id=message.get("game_id"),
-                reason=reason,
-            )
-            self.enviar(peer_id, response)
+
+            if reason is not None:
+                response = criar_envelope(
+                    "JOIN_ERR", src=self.peer_id, dst=peer_id,
+                    msg_id=message.get("msg_id"), game_id=message.get("game_id"),
+                    reason=reason,
+                )
+                self.enviar(peer_id, response)
             return
 
         if type_name == "JOIN_OK":
-            for token, (event, owner, response) in list(self.pending.items()):
-                if owner == peer_id:
-                    response.update(status="OK", message=message)
-                    event.set()
+            if not self.resolver_pendente(message, peer_id):
+                return
             if self.player is None:
                 self.player = GamePlayer(
                     self.peer_id,
@@ -454,10 +510,7 @@ class P2PForcaApp:
             return
 
         if type_name == "JOIN_ERR":
-            for token, (event, owner, response) in list(self.pending.items()):
-                if owner == peer_id:
-                    response.update(status="ERR", reason=message.get("reason"))
-                    event.set()
+            self.resolver_pendente(message,peer_id)
             return
 
         if type_name == "LEAVE":
@@ -475,17 +528,27 @@ class P2PForcaApp:
             return
 
         if type_name == "GAME_START":
-            if self.player is None:
-                self.player = GamePlayer(
-                    self.peer_id,
-                    message["game_id"],
-                    peer_id,
-                    message["word_hash"],
-                    message["word_length"],
-                    message["lives"],
-                    message["players"],
-                )
-            self.player.status = "PLAYING"
+            with self.lock:
+                if self.player is None or self.player.game_id != message.get("game_id"):
+                    self.player = GamePlayer(
+                        self.peer_id,
+                        message["game_id"],
+                        peer_id,
+                        message["word_hash"],
+                        message["word_length"],
+                        message["lives"],
+                        message["players"],
+                    )
+                else:
+                    self.player.word_hash = message["word_hash"]
+                    self.player.word_length = message["word_length"]
+                    self.player.masked = "_" * int(message["word_length"])
+                    self.player.lives = message["lives"]
+                    self.player.players = list(message.get("players", []))
+                self.player.status = "PLAYING"
+                self.player.last_seq = 0
+                self.player.turn = None
+                self.player.wrong_letters = []
             return
 
         if type_name == "STATE":
@@ -515,10 +578,8 @@ class P2PForcaApp:
             return
 
         if type_name == "GUESS_RESULT":
-            for token, (event, owner, response) in list(self.pending.items()):
-                if owner == peer_id:
-                    response.update(message)
-                    event.set()
+            if not self.resolver_pendente(message, peer_id):
+                return
             if self.player is not None:
                 self.player.processar_guess_result(message)
             return

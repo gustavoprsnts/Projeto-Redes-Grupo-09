@@ -3,8 +3,6 @@ import signal
 import sys
 import threading
 
-
-
 from conections.keep_alive import loop_keepalive
 from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
@@ -12,23 +10,12 @@ from conections.peer_table import PeerTable
 from conections.rendezvous_connection import carrega_json, refresh_register, register, unregister
 from forcaAPP import P2PForcaApp
 from interface.cli import CLI
-
-
-def configurar_logging(config):
-    handlers = [logging.StreamHandler()]
-    log_file = config.get("log_file")
-    if log_file:
-        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        handlers=handlers,
-    )
+from logs import configurar_logging
 
 
 def main():
     config = carrega_json()
-    configurar_logging(config)
+    configurar_logging(config.get("log_file"), "INFO")
     logger = logging.getLogger(__name__)
 
     meu_id = f"{config['name']}@{config['namespace']}"
@@ -88,7 +75,6 @@ def main():
             daemon=True,
             name="cli",
         ).start()
-
         logger.info("Peer em execução. Pressione Ctrl+C para encerrar.")
         while not encerrar.wait(1):
             pass

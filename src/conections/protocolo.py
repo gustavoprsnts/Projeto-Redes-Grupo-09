@@ -93,7 +93,22 @@ def validar(msg: dict):
     for campo, tipo in _TIPOS_CAMPOS.items():
         if campo in msg and not isinstance(msg[campo], tipo):
             return f"tipo invalido em '{campo}'"
-    return None
+    
+
+    if msg.get("ttl") != 1:
+        return "ttl inválido"
+
+    if msg["type"] == "GUESS":
+        tem_letra = "letter" in msg
+        tem_palavra = "word" in msg
+        if tem_letra == tem_palavra:
+            return "GUESS exige letter ou word"
+        if tem_letra and not isinstance(msg.get("letter"), str):
+            return "letter deve ser string"
+        if tem_palavra and not isinstance(msg.get("word"), str):
+            return "word deve ser string"
+
+        return None
 
 def criar_envelope(
     tipo: str,

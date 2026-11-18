@@ -30,6 +30,8 @@ class GameHost:
 
         self.estado = OPEN
         self.jogadores: list[str] = []
+        self.historico_jogadores: set[str] = set()
+        self.desconectados: set[str] = set()
         self.turno_atual = 0
         self.seq = 0
         self.scores: dict[str, int] = {}
@@ -45,20 +47,35 @@ class GameHost:
             return False
 
         self.jogadores.append(jogador)
+        self.historico_jogadores.add(jogador)
+        self.desconectados.discard(jogador)
         self.scores[jogador] = 0
         return True
 
-    def remover_jogador(self, jogador: str) -> bool:
+    def remover_jogador(self,jogador: str, desconexao: bool = False) -> bool:
         if jogador not in self.jogadores:
             return False
+
         index = self.jogadores.index(jogador)
-        era_a_vez = self.estado == RUNNING and self.turno_atual == index
+        era_a_vez = (
+            self.estado == RUNNING
+            and self.turno_atual == index
+        )
 
         del self.jogadores[index]
-        self.scores.pop(jogador, None)
+
+        if desconexao and self.estado == RUNNING:
+            self.desconectados.add(jogador)
+        else:
+            self.desconectados.discard(jogador)
+            self.participantes_originais.discard(jogador)
+
+            if self.estado != RUNNING:
+                self.scores.pop(jogador, None)
 
         if not self.jogadores:
-            self.finalizar()
+            if self.estado == RUNNING:
+                self.finalizar()
             return True
 
         if self.estado == RUNNING:
@@ -66,7 +83,10 @@ class GameHost:
                 self.turno_atual -= 1
             elif era_a_vez:
                 self.turno_atual %= len(self.jogadores)
+
             self.turn_started_at = monotonic()
+            self.seq += 1
+
         return True
 
     def jogador_da_vez(self) -> str:

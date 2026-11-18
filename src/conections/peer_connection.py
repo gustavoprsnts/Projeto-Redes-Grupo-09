@@ -5,12 +5,7 @@ import threading
 import uuid
 
 from conections.peer_table import Estado
-from conections.protocolo import (
-    ENDERECO_OPCIONAL,
-    OBRIGATORIOS,
-    SEM_ENDERECO,
-    agora_iso,
-    criar_envelope,
+from conections.protocolo import ( ENDERECO_OPCIONAL,OBRIGATORIOS, SEM_ENDERECO,agora_iso,criar_envelope,validar,
 )
 from conections.rendezvous_connection import ler_linha
 
@@ -241,6 +236,20 @@ def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_
             ref_msg_id=msg.get("msg_id"),
             code="unknown_type",
             message=f"unknown type: {tipo}",
+        )
+        enviar_json(conexao, resposta)
+        return "ok"
+
+    problema = validar(msg)
+
+    if problema is not None:
+        resposta = criar_envelope(
+            "ERROR",
+            src=meu,
+            dst=peer_id,
+            ref_msg_id=msg.get("msg_id"),
+            code="bad_request",
+            message=problema,
         )
         enviar_json(conexao, resposta)
         return "ok"
