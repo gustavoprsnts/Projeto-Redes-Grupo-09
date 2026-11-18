@@ -373,12 +373,20 @@ class P2PForcaApp:
             erradas = ", ".join(self.player.wrong_letters) or "-"
             vez = self.player.turn or "-"
             se_eu = " (você)" if self.player.turn == self.peer_id else ""
+            if self.player.status == "PLAYING" and self.player.turn_started_at is not None:
+                decorrido = time.monotonic() - self.player.turn_started_at
+                restante = max(
+                    0,
+                    math.ceil(self.player.turn_timeout - decorrido),
+                )
+            else:
+                restante = "-"
             return (
                 f"[Game] {self.player.game_id} (host: {self.player.host_id}) status: {self.player.status}\n"
                 f"[Game] Palavra: {' '.join(self.player.masked)} "
                 f"Vidas: {self.player.lives} Erradas: {erradas}\n"
                 f"[Game] Jogadores: {jogadores} Vez de: {vez}{se_eu} "
-                "Tempo restante: -"
+                f"Tempo restante: {restante}{' s' if restante != '-' else ''}"
             )
         return "[Game] no active game"
 
@@ -523,6 +531,7 @@ class P2PForcaApp:
                     word_length=0,
                     lives=int(self.config.get("lives", 6)),
                     players=message["players"],
+                    turn_timeout=int(self.config.get("turn_timeout", 30)),
                 )
             return
 
@@ -555,6 +564,7 @@ class P2PForcaApp:
                         message["word_length"],
                         message["lives"],
                         message["players"],
+                        turn_timeout=int(message["turn_timeout"]),
                     )
                 else:
                     self.player.word_hash = message["word_hash"]
@@ -562,6 +572,7 @@ class P2PForcaApp:
                     self.player.masked = "_" * int(message["word_length"])
                     self.player.lives = message["lives"]
                     self.player.players = list(message.get("players", []))
+                    self.player.turn_timeout = int(message["turn_timeout"])
                 self.player.status = "PLAYING"
                 self.player.last_seq = 0
                 self.player.turn = None
@@ -603,6 +614,26 @@ class P2PForcaApp:
 
         if type_name == "GAME_OVER":
             if self.player is not None:
-                self.player.processar_game_over(message)
-            logger.info("[Player] GAME_OVER %s", message.get("result"))
+                resultado = self.player.processar_game_over(message)
+                word = resultado.get("word")
+                winner = resultado.get("winner")
+                result = resultado.get("result")
+                scores = resultado.get("scores", {})
+                if winner:
+                    print(
+                        f"[Game] GAME_OVER {result} word={word} "
+                        f"winner={winner} scores={scores}"
+                    )
+                else:
+                    print(
+                        f"[Game] GAME_OVER {result} word={word} "
+                        f"scores={scores}"
+                    )
+                if not resultado.get("hash_valid", True):
+                    logger.warning("[Player] host cheated: hash mismatch")
+            else:
+                logger.info(
+                    "[Player] GAME_OVER %s",
+                    message.get("result"),
+                )
             self.player = None

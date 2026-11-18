@@ -1,5 +1,6 @@
 from collections.abc import Callable
 import hashlib
+from time import monotonic
 
 
 from conections.protocolo import criar_envelope
@@ -15,6 +16,7 @@ class GamePlayer:
         lives: int,
         players: list[str],
         enviar: Callable[[dict], dict] | None = None,
+        turn_timeout: int = 30,
 
     ):
         self.player_id = player_id
@@ -30,6 +32,8 @@ class GamePlayer:
         self.last_seq = 0
         self.status = "JOINED"
         self.enviar = enviar
+        self.turn_timeout = turn_timeout
+        self.turn_started_at: float | None = None
 
     def enviar_palpite_letra(self, letra: str) -> dict:
         mensagem = criar_envelope(
@@ -63,6 +67,7 @@ class GamePlayer:
         if mensagem["seq"] <= self.last_seq:
             return False
 
+        turno_anterior = self.turn
         self.last_seq = mensagem["seq"]
         self.masked = mensagem["masked"]
         self.wrong_letters = mensagem["wrong_letters"].copy()
@@ -70,6 +75,8 @@ class GamePlayer:
         self.turn = mensagem["turn"]
         self.players = mensagem["players"].copy()
         self.status = mensagem.get("status", "PLAYING")
+        if turno_anterior != self.turn:
+            self.turn_started_at = monotonic()
 
         return True
 
@@ -107,6 +114,8 @@ class GamePlayer:
             "status": "FINISHED",
             "result": mensagem.get("result"),
             "word": palavra,
+            "winner": mensagem.get("winner"),
+            "scores": mensagem.get("scores", {}),
             "hash_valid": hash_valido,
         }
 
