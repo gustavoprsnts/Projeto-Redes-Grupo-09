@@ -172,10 +172,3 @@ def refresh_register(config, encerrar, ttl):
             intervalo = config["discover_interval"]
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    logger.info("A tentar registar no servidor Rendezvous...")
-    config = carrega_json()
-    teste1 = register(config)
-    teste = unregister(config)
-    logger.info("Resposta do unregister: %s", teste)

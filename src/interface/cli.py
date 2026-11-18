@@ -84,9 +84,20 @@ class CLI:
                     if not medidas:
                         print("[CLI] RTT indisponível")
                     for medida in medidas:
+                        peer_id = medida.get("peer_id")
                         rtt = medida.get("rtt")
-                        rtt_txt = "-" if rtt is None else f"{rtt * 1000:.1f} ms"
-                        print(f"[CLI] {medida.get('peer_id')} RTT={rtt_txt}")
+                        
+                        if rtt is not None:
+                            lista = self.historico_rtt.setdefault(peer_id, [])
+                            lista.append(rtt)
+                            if len(lista) > 10:
+                                lista.pop(0)
+                            media = sum(lista) / len(lista)
+                            rtt_txt = f"{media * 1000:.1f} ms"
+                        else:
+                            rtt_txt = "-"
+                            
+                        print(f"[CLI] {peer_id} RTT={rtt_txt}")
 
                 elif command == "/reconnect":
                     ok, resultado = self.app.reconectar()

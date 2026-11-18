@@ -118,6 +118,7 @@ class PeerTable:
             peer["ping_pendente"] = msg_id
             return True
 
+
     def registrar_pong(self, peer_id, conexao, msg_id):
         with self.lock:
             peer = self.peers.get(peer_id)
