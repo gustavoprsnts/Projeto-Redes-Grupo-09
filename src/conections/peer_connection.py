@@ -5,7 +5,12 @@ import threading
 import uuid
 
 from conections.peer_table import Estado
-from conections.protocolo import criar_envelope
+from conections.protocolo import (
+    ENDERECO_OPCIONAL,
+    OBRIGATORIOS,
+    SEM_ENDERECO,
+    criar_envelope,
+)
 from conections.rendezvous_connection import ler_linha
 
 
@@ -207,6 +212,37 @@ def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_
     tipo = msg.get("type")
     meu = meu_id(config)
 
+    if msg.get("ttl") != 1:
+        resposta = criar_envelope(
+            "ERROR", src=meu, dst=peer_id,
+            ref_msg_id=msg.get("msg_id"),
+            code="bad_request",
+            message="ttl must be 1",
+        )
+        enviar_json(conexao, resposta)
+        return "ok"
+
+    if tipo not in SEM_ENDERECO and tipo not in ENDERECO_OPCIONAL:
+        if msg.get("dst") != meu:
+            resposta = criar_envelope(
+                "ERROR", src=meu, dst=peer_id,
+                ref_msg_id=msg.get("msg_id"),
+                code="not_for_me",
+                message="destination does not match local peer",
+            )
+            enviar_json(conexao, resposta)
+            return "ok"
+
+    if tipo not in OBRIGATORIOS:
+        resposta = criar_envelope(
+            "ERROR", src=meu, dst=peer_id,
+            ref_msg_id=msg.get("msg_id"),
+            code="unknown_type",
+            message=f"unknown type: {tipo}",
+        )
+        enviar_json(conexao, resposta)
+        return "ok"
+
     if tipo == "PING":
         resposta = criar_envelope(
             "PONG",
@@ -277,7 +313,18 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
                 msg = json.loads(linha)
             except json.JSONDecodeError:
                 logger.warning("Mensagem JSON inválida recebida de %s", peer_id)
-                continue
+                try:
+                    erro = criar_envelope(
+                        "ERROR",
+                        src=meu_id(config),
+                        dst=peer_id,
+                        code="bad_json",
+                        message="invalid JSON",
+                    )
+                    enviar_json(conexao, erro)
+                except Exception:
+                    pass
+                break
 
             if not isinstance(msg, dict):
                 logger.warning("Mensagem inválida recebida de %s (não é objeto JSON)", peer_id)
@@ -300,6 +347,16 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
             conexao.close()
         except Exception:
             pass
+        if handler_jogo is not None:
+            try:
+                handler_jogo(
+                    {"type": "PEER_DOWN", "peer_id": peer_id, "ttl": 1},
+                    peer_id,
+                    config,
+                    tabela,
+                )
+            except Exception:
+                logger.exception("Erro no handler de jogo ao processar queda de %s", peer_id)
         if removida:
             logger.info("Conexão com %s removida da tabela (estado=%s)", peer_id, motivo_estado.value)
         else:

@@ -31,11 +31,7 @@ def peer_client(config, tabela, encerrar, handler_jogo=None):
                         daemon=True,
                     ).start()
                 for peer_id, ip, porta in conectar:
-                    threading.Thread(
-                        target=conectar_e_registrar,
-                        args=(peer_id, ip, porta, config, tabela, handler_jogo),
-                        daemon=True,
-                    ).start()
+                    threading.Thread(target=conectar_e_registrar, args=(peer_id, ip, porta, config, tabela, handler_jogo), daemon=True, ).start()
         except Exception:
             logger.exception("Erro no ciclo de descoberta/reconciliação de peers")
 

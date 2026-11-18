@@ -2,7 +2,7 @@ from collections.abc import Callable
 from time import monotonic
 from uuid import uuid4
 
-from src.game.hangman import Hangman
+from game.hangman import Hangman
 from conections.protocolo import criar_envelope
 
 IDLE = "IDLE"
@@ -46,6 +46,27 @@ class GameHost:
 
         self.jogadores.append(jogador)
         self.scores[jogador] = 0
+        return True
+
+    def remover_jogador(self, jogador: str) -> bool:
+        if jogador not in self.jogadores:
+            return False
+        index = self.jogadores.index(jogador)
+        era_a_vez = self.estado == RUNNING and self.turno_atual == index
+
+        del self.jogadores[index]
+        self.scores.pop(jogador, None)
+
+        if not self.jogadores:
+            self.finalizar()
+            return True
+
+        if self.estado == RUNNING:
+            if index < self.turno_atual:
+                self.turno_atual -= 1
+            elif era_a_vez:
+                self.turno_atual %= len(self.jogadores)
+            self.turn_started_at = monotonic()
         return True
 
     def jogador_da_vez(self) -> str:
@@ -122,6 +143,8 @@ class GameHost:
                 if antes == "_" and depois != "_"
             )
             self.scores[jogador] += revealed
+        elif palavra is not None and resultado["correct"]:
+            self.scores[jogador] += masked_before.count("_")
 
         jogador_da_jogada = jogador
 

@@ -56,7 +56,7 @@ class PeerTable:
         with self.lock:
             return list(self.peers.values())
 
-#funcao para obter dados dos peers (registro completo ou campo específico)
+#funcao para obter dados dos peers 
     def obter(self, peer_id, campo=None):
         with self.lock:
             peer = self.peers.get(peer_id)
@@ -83,9 +83,8 @@ class PeerTable:
                     peer["status"] = Estado.GONE
                     peer["proxima_tentativa"] = None
             return ativas
-
+ #funcao que remove a conexão da tabela apenas se ela ainda for a conexão ativa do peer.
     def desconectar_conexao(self, peer_id, conexao, novo_status=Estado.STALE):
-        """Remove a conexão da tabela apenas se ela ainda for a conexão ativa do peer."""
         with self.lock:
             peer = self.peers.get(peer_id)
             if peer is None or peer.get("conexao") is not conexao:
@@ -125,7 +124,7 @@ class PeerTable:
             if peer is None or peer.get("conexao") is not conexao:
                 return None
             if peer.get("ping_pendente") is not None and msg_id is not None and peer.get("ping_pendente") != msg_id:
-                # PONG inesperado/atrasado: ainda conta como atividade
+               
                 peer["ultimo_contato"] = time.time()
                 return None
             agora = time.time()

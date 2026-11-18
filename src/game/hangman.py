@@ -77,6 +77,7 @@ class Hangman:
             return {"accepted": False, "reason": "invalid_word"}
 
         if palpite_palavra == self.palavra:
+            self.letras_tentadas.update(self.palavra)
             self.estado = "WON"
             return {
                 "accepted": True,

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 import hashlib
 
+
 from conections.protocolo import criar_envelope
 
 class GamePlayer:
@@ -68,7 +69,7 @@ class GamePlayer:
         self.lives = mensagem["lives"]
         self.turn = mensagem["turn"]
         self.players = mensagem["players"].copy()
-        self.status = mensagem["status"]
+        self.status = mensagem.get("status", "PLAYING")
 
         return True
 

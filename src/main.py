@@ -3,11 +3,15 @@ import signal
 import sys
 import threading
 
+
+
 from conections.keep_alive import loop_keepalive
 from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
 from conections.peer_table import PeerTable
 from conections.rendezvous_connection import carrega_json, refresh_register, register, unregister
+from src.forcaAPP import P2PForcaApp
+from interface.cli import CLI
 
 
 def configurar_logging(config):
@@ -36,6 +40,7 @@ def main():
     )
     encerrar = threading.Event()
     servidor_sock = None
+    app = P2PForcaApp(config, tabela)
 
     def solicitar_encerramento(*_args):
         if not encerrar.is_set():
@@ -58,11 +63,11 @@ def main():
         ttl = resposta.get("ttl", config.get("register_ttl", 7200))
         logger.info("Peer iniciado como %s (ttl=%s)", meu_id, ttl)
 
-        servidor_sock = iniciar_servidor(config, tabela)
+        servidor_sock = iniciar_servidor(config, tabela, app.handler)
 
         threading.Thread(
             target=peer_client,
-            args=(config, tabela, encerrar),
+            args=(config, tabela, encerrar, app.handler),
             daemon=True,
             name="peer-client",
         ).start()
@@ -77,6 +82,11 @@ def main():
             args=(config, tabela, encerrar),
             daemon=True,
             name="keep-alive",
+        ).start()
+        threading.Thread(
+            target=CLI(app, encerrar).run,
+            daemon=True,
+            name="cli",
         ).start()
 
         logger.info("Peer em execução. Pressione Ctrl+C para encerrar.")

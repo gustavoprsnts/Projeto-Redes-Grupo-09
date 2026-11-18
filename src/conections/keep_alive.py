@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def _enviar_ping(peer_id, conexao, config, tabela):
-    msg = criar_envelope("PING", src=meu_id(config), dst=peer_id, timestamp=agora_iso())
+    msg = criar_envelope("PING", timestamp=agora_iso())
     try:
         enviar_json(conexao, msg)
         if tabela.registrar_ping_enviado(peer_id, conexao, msg.get("msg_id")):
@@ -26,12 +26,7 @@ def loop_keepalive(config, tabela, encerrar):
     timeout_pong = float(config.get("ping_timeout", min(ping_interval, 5)))
     tick = min(1.0, max(0.2, ping_interval / 2))
 
-    logger.info(
-        "Iniciando keep-alive (intervalo=%ss, limite_falhas=%s, timeout_pong=%ss)",
-        ping_interval,
-        ping_miss_limit,
-        timeout_pong,
-    )
+    logger.info( "Iniciando keep-alive (intervalo=%ss, limite_falhas=%s, timeout_pong=%ss)",ping_interval,ping_miss_limit,timeout_pong,)
 
     while not encerrar.is_set():
         try:
