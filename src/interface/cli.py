@@ -1,6 +1,23 @@
 import shlex
-import threading
 
+AJUDA = """Comandos:
+  /peers [* | #namespace]            descobre e lista peers (padrão: namespace local)
+  /conn                              lista conexões ativas (direção, estado, RTT)
+  /rtt                               RTT médio por peer
+  /reconnect                         força reconciliação imediata com o Rendezvous
+  /games                             pergunta aos vizinhos quais partidas existem
+  /create <palavra> [max_players]    cria uma partida (você vira o host)
+  /create --random [max_players]     cria partida com palavra sorteada do words.txt
+  /start                             inicia a partida hospedada (exige >= 1 jogador)
+  /cancel                            cancela a partida hospedada
+  /join <host_peer_id>               entra na partida do host (ex.: /join alice@CIC)
+  /leave                             sai da partida atual
+  /guess <letra>                     palpite de letra
+  /word <palavra>                    palpite da palavra inteira
+  /status                            estado local da partida
+  /log <DEBUG|INFO|WARNING|ERROR>    nível de log na tela
+  /help                              esta ajuda
+  /quit                              encerra (LEAVE/GAME_OVER, BYE e UNREGISTER)"""
 
 class CLI:
     def __init__(self, app, encerrar):
@@ -29,7 +46,8 @@ class CLI:
             args = parts[1:]
 
             if command == "/help":
-                print("[CLI] /peers [* | namespace] /conn /rtt /reconnect /games /create /start /cancel /join /leave /guess /word /status /log <nível> /quit")
+                print(AJUDA)
+               
             elif command == "/peers":
                 namespace = args[0] if args else ""
                 peers = self.app.listar_peers(namespace)
