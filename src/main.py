@@ -1,3 +1,9 @@
+# Cabeçalho 
+# Alunos 
+#  Arthur Correia Marques — 241022316
+# - Gustavo Pires dos Santos — 251004349
+# - Helton Rodrigues da Silva Junior — 251021789
+
 import logging
 import signal
 import sys
@@ -8,11 +14,11 @@ from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
 from conections.peer_table import PeerTable
 from conections.rendezvous_connection import carrega_json, refresh_register, register, unregister
-from forcaAPP import P2PForcaApp
+from game.forcaAPP import P2PForcaApp
 from interface.cli import CLI
-from logs import configurar_logging
+from interface.logs import configurar_logging
 
-
+# funcao dedicada ao loop principal do projeto 
 def main():
     config = carrega_json()
     configurar_logging(config.get("log_file"), "INFO")

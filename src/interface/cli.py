@@ -22,7 +22,7 @@ AJUDA = """Comandos:
 class CLI:
     def __init__(self, app, *args):
         self.app = app
-        # aceita (app, encerrar) ou (app, tabela, config, encerrar)
+       
         if len(args) == 1:
             self.encerrar = args[0]
         elif len(args) >= 3:
