@@ -29,7 +29,49 @@ class CLI:
             args = parts[1:]
 
             if command == "/help":
-                print("[CLI] /peers /conn /rtt /reconnect /games /create /start /cancel /join /leave /guess /word /status /log /quit")
+                print("[CLI] /peers [* | namespace] /conn /rtt /reconnect /games /create /start /cancel /join /leave /guess /word /status /log <nível> /quit")
+            elif command == "/peers":
+                namespace = args[0] if args else ""
+                peers = self.app.listar_peers(namespace)
+                if not peers:
+                    print("[CLI] nenhum peer conhecido")
+                for peer in peers:
+                    print(
+                        f"[CLI] {peer['peer_id']} "
+                        f"status={peer['status']} "
+                        f"{peer['ip'] or '-'}:{peer['port'] or '-'}"
+                    )
+            elif command == "/conn":
+                conexoes = self.app.listar_conexoes()
+                if not conexoes:
+                    print("[CLI] nenhuma conexão ativa")
+                for conexao in conexoes:
+                    rtt = "-" if conexao["rtt"] is None else f"{conexao['rtt'] * 1000:.1f} ms"
+                    print(
+                        f"[CLI] {conexao['peer_id']} "
+                        f"dir={conexao['direcao']} status={conexao['status']} rtt={rtt}"
+                    )
+            elif command == "/rtt":
+                medidas = self.app.listar_rtt()
+                if not medidas:
+                    print("[CLI] RTT indisponível")
+                for medida in medidas:
+                    print(f"[CLI] {medida['peer_id']} RTT={medida['rtt'] * 1000:.1f} ms")
+            elif command == "/reconnect":
+                ok, resultado = self.app.reconectar()
+                if not ok:
+                    print(f"[CLI] {resultado}")
+                else:
+                    print(
+                        "[CLI] reconciliação concluída "
+                        f"(conectar={resultado['conectar']} fechar={resultado['fechar']} "
+                        f"peers={resultado['peers']})"
+                    )
+            elif command == "/log" and args:
+                ok, resultado = self.app.definir_log_level(args[0])
+                print(f"[CLI] nível de log: {resultado}" if ok else f"[CLI] {resultado}")
+            elif command == "/log":
+                print("[CLI] uso: /log <DEBUG|INFO|WARNING|ERROR>")
             elif command == "/games":
                 print("[CLI] buscando partidas...")
                 for peer_id, games in self.app.listar_partidas().items():

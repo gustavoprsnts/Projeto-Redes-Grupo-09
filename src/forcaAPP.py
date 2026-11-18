@@ -29,6 +29,84 @@ class P2PForcaApp:
     def enviar(self, peer_id, message):
         return enviar_para_peer(self.tabela, peer_id, message)
 
+    def listar_peers(self, namespace=""):
+        peers = []
+        namespace = namespace.strip().lower() if namespace else ""
+        for peer in self.tabela.listar():
+            peer_id = peer["peer_id"]
+            if namespace and namespace != "*" and not peer_id.endswith("@" + namespace.upper()):
+                continue
+            peers.append({
+                "peer_id": peer_id,
+                "status": peer["status"].value if hasattr(peer["status"], "value") else str(peer["status"]),
+                "ip": peer.get("ip"),
+                "port": peer.get("port"),
+                "rtt": peer.get("rtt"),
+            })
+        return peers
+
+    def listar_conexoes(self):
+        conexoes = []
+        for peer_id, peer in ((peer["peer_id"], peer) for peer in self.tabela.listar()):
+            conexao = peer.get("conexao")
+            if conexao is not None:
+                conexoes.append({
+                    "peer_id": peer_id,
+                    "status": peer["status"].value if hasattr(peer["status"], "value") else str(peer["status"]),
+                    "direcao": peer.get("direcao"),
+                    "rtt": peer.get("rtt"),
+                })
+        return conexoes
+
+    def listar_rtt(self):
+        return [
+            {"peer_id": peer["peer_id"], "rtt": peer.get("rtt")}
+            for peer in self.tabela.listar()
+            if peer.get("rtt") is not None
+        ]
+
+    def reconectar(self):
+        from conections.rendezvous_connection import discover
+        from conections.peer_connection import conectar_e_registrar, encerrar_conexao
+
+        lista = discover(self.config)
+        if lista is None:
+            return False, "falha ao consultar o Rendezvous"
+        conectar, fechar = self.tabela.reconciliar(lista)
+        for peer_id, conexao in fechar:
+            threading.Thread(
+                target=encerrar_conexao,
+                args=(conexao, self.config, peer_id, "gone"),
+                daemon=True,
+            ).start()
+        for peer_id, ip, porta in conectar:
+            threading.Thread(
+                target=conectar_e_registrar,
+                args=(peer_id, ip, porta, self.config, self.tabela, self.handler),
+                daemon=True,
+            ).start()
+        return True, {"conectar": len(conectar), "fechar": len(fechar), "peers": len(self.tabela.listar())}
+
+    def definir_log_level(self, nivel):
+        niveis = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+        }
+        nivel = nivel.upper()
+        if nivel not in niveis:
+            return False, "nível inválido; use DEBUG, INFO, WARNING ou ERROR"
+        logging.getLogger().setLevel(niveis[nivel])
+        return True, nivel
+
+    def encerramento_limpo(self):
+        if self.host is not None:
+            return self.cancelar()
+        if self.player is not None:
+            return self.sair()
+        return True
+
     def broadcast(self, message_type, message_fields):
         if self.host is None:
             return
@@ -156,7 +234,10 @@ class P2PForcaApp:
         response = {}
         self.pending[token] = (event, host_id, response)
         game = self.games_by_host.get(host_id)
-        game_id = game["game_id"] if game else f"{host_id}/"
+        if game is None:
+            self.pending.pop(token, None)
+            return False, "execute /games antes de entrar"
+        game_id = game["game_id"]
         message = criar_envelope(
             "JOIN",
             src=self.peer_id,

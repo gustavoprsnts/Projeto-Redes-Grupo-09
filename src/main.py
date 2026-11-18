@@ -101,17 +101,22 @@ def main():
     finally:
         encerrar.set()
 
-        if servidor_sock is not None:
-            try:
-                servidor_sock.close()
-            except Exception:
-                logger.exception("Falha ao fechar socket do servidor de peers")
+        try:
+            app.encerramento_limpo()
+        except Exception:
+            logger.exception("Falha ao enviar LEAVE ou GAME_OVER antes do encerramento")
 
         for peer_id, conexao in tabela.coletar_conexoes_ativas():
             try:
                 encerrar_conexao(conexao, config, peer_id, "shutdown")
             except Exception:
                 logger.exception("Falha ao encerrar conexão com %s durante shutdown", peer_id)
+
+        if servidor_sock is not None:
+            try:
+                servidor_sock.close()
+            except Exception:
+                logger.exception("Falha ao fechar socket do servidor de peers")
 
         try:
             unregister(config)

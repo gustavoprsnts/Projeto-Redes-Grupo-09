@@ -24,6 +24,7 @@ def meu_id(config):
 
 def enviar_json(conexao, msg):
     dados = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+    logger.debug("TX %s", json.dumps(msg, ensure_ascii=False, sort_keys=True))
     conexao.sendall(dados)
 
 
@@ -329,6 +330,8 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
             if not isinstance(msg, dict):
                 logger.warning("Mensagem inválida recebida de %s (não é objeto JSON)", peer_id)
                 continue
+
+            logger.debug("RX %s %s", peer_id, json.dumps(msg, ensure_ascii=False, sort_keys=True))
 
             tabela.registrar_atividade(peer_id, conexao)
 
