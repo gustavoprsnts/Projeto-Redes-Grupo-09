@@ -47,15 +47,18 @@ _TIPOS_CAMPOS = {
     "result": str,
 }
 
-
+#geração do instate atual
 def agora_iso() -> str:
+
+    #obtem hora, formata e remove os ultimos 3 digitos dos microssegundos e adiona Z indicando UTC
+    #(um tempo padrão universal)
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-
+#gera um indentificador único universal
 def novo_id() -> str:
     return str(uuid.uuid4())
 
-
+#gera um dicionario pronto para virar um JSON
 def montar(tipo: str, src=None, dst=None, msg_id=None, **campos) -> dict:
     """Monta uma mensagem com o envelope padrao (ttl = 1)."""
     msg = {"type": tipo, "msg_id": msg_id or novo_id()}
@@ -69,11 +72,12 @@ def montar(tipo: str, src=None, dst=None, msg_id=None, **campos) -> dict:
     msg["ttl"] = 1
     return msg
 
-
+#transforma dicionario Python em bytes pronto para ser enviado pot socket TCP
 def codificar(msg: dict) -> bytes:
     return (json.dumps(msg, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
-
+#verifica se a mensagem recebida possui uma estrutura valida segundo o protocolo
+#retorna None se estiver ok ou a descrição do problema se não estiver correto
 def validar(msg: dict):
     """Devolve None se a mensagem e valida, ou a descricao do problema."""
     if not isinstance(msg.get("type"), str):
@@ -93,8 +97,24 @@ def validar(msg: dict):
     for campo, tipo in _TIPOS_CAMPOS.items():
         if campo in msg and not isinstance(msg[campo], tipo):
             return f"tipo invalido em '{campo}'"
-    return None
+    
 
+    if msg.get("ttl") != 1:
+        return "ttl inválido"
+
+    if msg["type"] == "GUESS":
+        tem_letra = "letter" in msg
+        tem_palavra = "word" in msg
+        if tem_letra == tem_palavra:
+            return "GUESS exige letter ou word"
+        if tem_letra and not isinstance(msg.get("letter"), str):
+            return "letter deve ser string"
+        if tem_palavra and not isinstance(msg.get("word"), str):
+            return "word deve ser string"
+
+        return None
+
+#monta um envelope básico de uma mensagem P2P
 def criar_envelope(
     tipo: str,
     src: str | None = None,

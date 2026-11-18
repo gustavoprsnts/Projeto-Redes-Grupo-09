@@ -1,34 +1,27 @@
+# Cabeçalho 
+# Alunos 
+#  Arthur Correia Marques — 241022316
+# - Gustavo Pires dos Santos — 251004349
+# - Helton Rodrigues da Silva Junior — 251021789
+
 import logging
 import signal
 import sys
 import threading
-
-
 
 from conections.keep_alive import loop_keepalive
 from conections.p2p_client import peer_client
 from conections.peer_connection import encerrar_conexao, iniciar_servidor
 from conections.peer_table import PeerTable
 from conections.rendezvous_connection import carrega_json, refresh_register, register, unregister
-from src.forcaAPP import P2PForcaApp
+from game.forcaAPP import P2PForcaApp
 from interface.cli import CLI
+from interface.logs import configurar_logging
 
-
-def configurar_logging(config):
-    handlers = [logging.StreamHandler()]
-    log_file = config.get("log_file")
-    if log_file:
-        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        handlers=handlers,
-    )
-
-
+# funcao dedicada ao loop principal do projeto 
 def main():
     config = carrega_json()
-    configurar_logging(config)
+    configurar_logging(config.get("log_file"), "INFO")
     logger = logging.getLogger(__name__)
 
     meu_id = f"{config['name']}@{config['namespace']}"
@@ -88,7 +81,6 @@ def main():
             daemon=True,
             name="cli",
         ).start()
-
         logger.info("Peer em execução. Pressione Ctrl+C para encerrar.")
         while not encerrar.wait(1):
             pass
@@ -101,17 +93,22 @@ def main():
     finally:
         encerrar.set()
 
-        if servidor_sock is not None:
-            try:
-                servidor_sock.close()
-            except Exception:
-                logger.exception("Falha ao fechar socket do servidor de peers")
+        try:
+            app.encerramento_limpo()
+        except Exception:
+            logger.exception("Falha ao enviar LEAVE ou GAME_OVER antes do encerramento")
 
         for peer_id, conexao in tabela.coletar_conexoes_ativas():
             try:
                 encerrar_conexao(conexao, config, peer_id, "shutdown")
             except Exception:
                 logger.exception("Falha ao encerrar conexão com %s durante shutdown", peer_id)
+
+        if servidor_sock is not None:
+            try:
+                servidor_sock.close()
+            except Exception:
+                logger.exception("Falha ao fechar socket do servidor de peers")
 
         try:
             unregister(config)

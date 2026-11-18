@@ -5,11 +5,7 @@ import threading
 import uuid
 
 from conections.peer_table import Estado
-from conections.protocolo import (
-    ENDERECO_OPCIONAL,
-    OBRIGATORIOS,
-    SEM_ENDERECO,
-    criar_envelope,
+from conections.protocolo import ( ENDERECO_OPCIONAL,OBRIGATORIOS, SEM_ENDERECO,agora_iso,criar_envelope,validar,
 )
 from conections.rendezvous_connection import ler_linha
 
@@ -24,6 +20,7 @@ def meu_id(config):
 # funcao que envia json para o peer
 def enviar_json(conexao, msg):
     dados = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+    logger.debug("TX %s", json.dumps(msg, ensure_ascii=False, sort_keys=True))
     conexao.sendall(dados)
 
 # funcao que envia json para o peer apos verificar se o peer esta conectado
@@ -243,6 +240,20 @@ def _processar_mensagem_recebida(msg, peer_id, conexao, config, tabela, handler_
         enviar_json(conexao, resposta)
         return "ok"
 
+    problema = validar(msg)
+
+    if problema is not None:
+        resposta = criar_envelope(
+            "ERROR",
+            src=meu,
+            dst=peer_id,
+            ref_msg_id=msg.get("msg_id"),
+            code="bad_request",
+            message=problema,
+        )
+        enviar_json(conexao, resposta)
+        return "ok"
+
     if tipo == "PING":
         resposta = criar_envelope(
             "PONG",
@@ -331,6 +342,9 @@ def loop_receber(conexao, peer_id, config, tabela, handler_jogo=None):
             if not isinstance(msg, dict):
                 logger.warning("Mensagem inválida recebida de %s (não é objeto JSON)", peer_id)
                 continue
+
+            logger.debug("RX %s %s", peer_id, json.dumps(msg, ensure_ascii=False, sort_keys=True))
+
             #registra a atividade do peer na tabela de conexões
             tabela.registrar_atividade(peer_id, conexao)
 
@@ -396,6 +410,13 @@ def guardar_conexao(tabela, config, peer, conexao, handler_jogo=None):
         daemon=True,
         name=f"rx-{peer_id}",
     ).start()
+
+    ping = criar_envelope("PING", timestamp=agora_iso())
+    if tabela.registrar_ping_enviado(peer_id, conexao, ping["msg_id"]):
+        try:
+            enviar_json(conexao, ping)
+        except Exception:
+            tabela.registrar_falha_ping(peer_id, conexao)
     return True
 
 

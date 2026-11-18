@@ -10,8 +10,9 @@ OPEN = "OPEN"
 RUNNING = "RUNNING"
 FINISHED = "FINISHED"
 
-
+# classe para host de partida 
 class GameHost:
+    # funcao que inicializa o host da partida com as configuracoes e regras do jogo
     def __init__(
         self,
         host_id: str,
@@ -30,12 +31,16 @@ class GameHost:
 
         self.estado = OPEN
         self.jogadores: list[str] = []
+        self.historico_jogadores: set[str] = set()
+        self.desconectados: set[str] = set()
         self.turno_atual = 0
         self.seq = 0
         self.scores: dict[str, int] = {}
         self.last_guess: dict | None = None
         self.turn_started_at: float | None = None
 
+
+# funcao que adiciona um novo jogador a sala caso esteja aberta e com vagas
     def adicionar_jogador(self, jogador: str) -> bool:
         if self.estado != OPEN:
             return False
@@ -45,20 +50,38 @@ class GameHost:
             return False
 
         self.jogadores.append(jogador)
+        self.historico_jogadores.add(jogador)
+        self.desconectados.discard(jogador)
         self.scores[jogador] = 0
         return True
 
-    def remover_jogador(self, jogador: str) -> bool:
+
+    
+# funcao que remove um jogador da partida, lidando com reconexoes ou fim de jogo
+    def remover_jogador(self,jogador: str, desconexao: bool = False) -> bool:
         if jogador not in self.jogadores:
             return False
+
         index = self.jogadores.index(jogador)
-        era_a_vez = self.estado == RUNNING and self.turno_atual == index
+        era_a_vez = (
+            self.estado == RUNNING
+            and self.turno_atual == index
+        )
 
         del self.jogadores[index]
-        self.scores.pop(jogador, None)
+
+        if desconexao and self.estado == RUNNING:
+            self.desconectados.add(jogador)
+        else:
+            self.desconectados.discard(jogador)
+            self.participantes_originais.discard(jogador)
+
+            if self.estado != RUNNING:
+                self.scores.pop(jogador, None)
 
         if not self.jogadores:
-            self.finalizar()
+            if self.estado == RUNNING:
+                self.finalizar()
             return True
 
         if self.estado == RUNNING:
@@ -66,19 +89,27 @@ class GameHost:
                 self.turno_atual -= 1
             elif era_a_vez:
                 self.turno_atual %= len(self.jogadores)
+
             self.turn_started_at = monotonic()
+            self.seq += 1
+
         return True
 
+
+# funcao que verica qual o jogador do turno 
     def jogador_da_vez(self) -> str:
         if not self.jogadores:
             raise ValueError("A partida não possui jogadores")
         return self.jogadores[self.turno_atual]
 
+# funcao que avanca o turno para o proximo jogador na sequencia
     def avancar_turno(self) -> None:
         if self.jogadores:
             self.turno_atual = (self.turno_atual + 1) % len(self.jogadores)
             self.turn_started_at = monotonic()
 
+
+# funcao que inicia oficialmente a partida se houver jogadores cadastrados
     def iniciar(self) -> bool:
         if self.estado != OPEN or not self.jogadores:
             return False
@@ -89,13 +120,15 @@ class GameHost:
         self.last_guess = None
         self.turn_started_at = monotonic()
         return True
-
+# funcao que trata o encerramento da seçao 
     def finalizar(self) -> None:
         self.estado = FINISHED
 
+# funcao para setar o estado como Running ou seja ocorrendo partida 
     def esta_em_andamento(self) -> bool:
         return self.estado == RUNNING
 
+# funcao que processa tentativa 
     def processar_guess(
         self,
         jogador: str,
@@ -161,6 +194,7 @@ class GameHost:
 
         return resultado
 
+# funcao que cria o envelope de resposta para o resultado de um palpite
     def guess_result(self, jogador: str, resultado: dict, msg_id: str | None) -> dict:
         resposta = criar_envelope(
             tipo="GUESS_RESULT",
@@ -171,7 +205,7 @@ class GameHost:
         )
         resposta.update(resultado)
         return resposta
-
+# funcao que gera o envelope com o estado atual
     def state(self, dst: str | None = None) -> dict:
         return criar_envelope(
             tipo="STATE",
@@ -185,6 +219,7 @@ class GameHost:
             last_guess=self.last_guess.copy() if self.last_guess else None,
         )
 
+#  # funcao que gera o envelope com o estado atual
     def game_start(self, dst: str | None = None) -> dict:
         return criar_envelope(
             tipo="GAME_START",
@@ -198,6 +233,7 @@ class GameHost:
             turn_timeout=self.turn_timeout,
         )
 
+# funcao que verifica se o tempo limite do turno atual expirou
     def processar_timeout(self) -> dict | None:
         if self.estado != RUNNING or self.turn_started_at is None:
             return None
@@ -213,6 +249,7 @@ class GameHost:
         self.seq += 1
         return self.state(dst=self.jogador_da_vez())
 
+# funcao que processa fim da partida e cria envelope  
     def game_over(self, vencedor: str | None = None, dst: str | None = None) -> dict:
         result = "WON" if self.jogo.estado == "WON" else "LOST"
         winner = vencedor if result == "WON" else None

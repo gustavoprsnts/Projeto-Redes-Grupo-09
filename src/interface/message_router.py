@@ -11,6 +11,7 @@ class MessageRouter:
         self.host = host
         self.player = player
 
+# funcao de direcionamento de mensagem ao seu tipo indicado 
     def route(self, message: dict) -> list[dict]:
         message_type = message.get("type")
 
@@ -32,6 +33,7 @@ class MessageRouter:
 
         raise ValueError(f"Tipo de mensagem não suportado: {message_type}")
 
+#funcao que processa palpites no contexto do host e formata as respostas correspondentes
     def _route_guess(self, message: dict) -> list[dict]:
         if self.host is None:
             raise RuntimeError("Nenhum GameHost foi configurado")

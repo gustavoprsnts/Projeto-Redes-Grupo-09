@@ -7,7 +7,7 @@ from conections.protocolo import agora_iso, criar_envelope
 
 logger = logging.getLogger(__name__)
 
-
+# cria e envia uma mensagem PING para um peer especifico
 def enviar_ping(peer_id, conexao, config, tabela):
     msg = criar_envelope("PING", timestamp=agora_iso())
     if not tabela.registrar_ping_enviado(peer_id, conexao, msg.get("msg_id")):
@@ -21,7 +21,7 @@ def enviar_ping(peer_id, conexao, config, tabela):
         tabela.registrar_falha_ping(peer_id, conexao)
     return False
 
-
+# mantem todas as conexões TCP monitoradas periodicamente
 def loop_keepalive(config, tabela, encerrar):
     ping_interval = float(config.get("ping_interval", 30))
     ping_miss_limit = int(config.get("ping_miss_limit", 3))
@@ -29,7 +29,7 @@ def loop_keepalive(config, tabela, encerrar):
     tick = min(1.0, max(0.2, ping_interval / 2))
 
     logger.info( "Iniciando keep-alive (intervalo=%ss, limite_falhas=%s, timeout_pong=%ss)",ping_interval,ping_miss_limit,timeout_pong,)
-
+    # enquanto o evento nao fot encerrado ele ficara fazendo verificação
     while not encerrar.is_set():
         try:
             agora = time.time()

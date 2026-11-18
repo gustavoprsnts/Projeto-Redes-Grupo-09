@@ -1,6 +1,7 @@
 import json
 import logging
 import socket
+import weakref
 from pathlib import Path
 
 
@@ -8,8 +9,9 @@ logger = logging.getLogger(__name__)
 
 # constante que salva o caminho para acessar config
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
-MAX_BUFFER = 32768
 
+MAX_BUFFER = 32768
+SOBRAS = weakref.WeakKeyDictionary()
 
 # funcao para a leitura e retorno dos dados do arquivo config.json
 def carrega_json():
@@ -21,26 +23,32 @@ def carrega_json():
 # funcao para a leitura de dados ate a quebra de linha
 def ler_linha(sock):
     # definicao de buffer
-    buffer = b""
+    buffer = SOBRAS.pop(sock, b"")
 
     # loop para leitura ate encontrar quebra de linha
-    while b"\n" not in buffer:
-        parte = sock.recv(2048)
-        if not parte:
-            break
-        buffer += parte
+    try:
+        while b"\n" not in buffer:
+            parte = sock.recv(2048)
+            if not parte:
+                break
+            buffer += parte
 
-        if len(buffer) > MAX_BUFFER:
-            # verificacao do estouro de buffer
-            raise ValueError("buffer maior que o limite")
-
-    if not buffer:
-        return b""
-
-    linha, _resto = buffer.split(b"\n", 1)
+            if len(buffer) > MAX_BUFFER:
+                # verificacao do estouro de buffer
+                raise ValueError("buffer maior que o limite")
+    except BaseException:
+        SOBRAS[sock] = buffer
+        raise
+    if b"\n" not in buffer:
+        return buffer
+    linha, resto = buffer.split(b"\n", 1)
+    if resto:
+        SOBRAS[sock] = resto
     return linha
+            
 
-
+    
+        
 # funcao para comunicacao no randezvous
 def conectar_rdv(config, payload):
     # carregando dados do json
@@ -164,10 +172,3 @@ def refresh_register(config, encerrar, ttl):
             intervalo = config["discover_interval"]
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    logger.info("A tentar registar no servidor Rendezvous...")
-    config = carrega_json()
-    teste1 = register(config)
-    teste = unregister(config)
-    logger.info("Resposta do unregister: %s", teste)
