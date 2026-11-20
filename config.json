@@ -1,8 +1,7 @@
-{
-  "rdv_host": "pyp2p.mfcaetano.cc",
+{"rdv_host": "pyp2p.mfcaetano.cc",
   "rdv_port": 8080,
   "namespace": "CIC",
-  "name": "grupo9",
+  "name": "alice",
   "listen_port": 8081,
   "register_ttl": 7200,
   "discover_interval": 20,

@@ -28,6 +28,18 @@ class P2PForcaApp:
         self.lock = threading.Lock()
         self.pending = {}
         self.games_by_host = {}
+        self.status_callback = None
+
+    def definir_status_callback(self, callback):
+        self.status_callback = callback
+
+#funcao para mostrar status da partida a cada alteração 
+    def notificar_status(self):
+        if self.status_callback is not None:
+            try:
+                self.status_callback(self.status())
+            except Exception:
+                pass
 
  # funcao para envio de mensagem para um peer especifico 
     def enviar(self, peer_id, message):
@@ -232,6 +244,7 @@ class P2PForcaApp:
                 self.enviar(player_id, self.host.state(player_id))
             except Exception as exc:
                 logger.warning("Falha ao iniciar jogo para %s: %s", player_id, exc)
+        self.notificar_status()
         threading.Thread(target=self._turn_timeout_loop, daemon=True).start()
         return True, self.host.game_id
 
@@ -251,6 +264,7 @@ class P2PForcaApp:
                         self.enviar(player_id, state_copy)
                     except Exception:
                         pass
+            self.notificar_status()
             time.sleep(0.5)
 
 # funcao que lista as partidas disponiveis 
@@ -395,7 +409,10 @@ class P2PForcaApp:
             erradas = ", ".join(self.player.wrong_letters) or "-"
             vez = self.player.turn or "-"
             se_eu = " (você)" if self.player.turn == self.peer_id else ""
-            if self.player.status == "PLAYING" and self.player.turn_started_at is not None:
+            if (
+                self.player.status == "PLAYING"
+                and getattr(self.player, "turn_started_at", None) is not None
+            ):
                 decorrido = time.monotonic() - self.player.turn_started_at
                 restante = max(
                     0,
@@ -504,6 +521,7 @@ class P2PForcaApp:
                         rejoin=True,
                     )
                     self.enviar(peer_id, response)
+                    self.notificar_status()
 
                     self.host.seq += 1
                     for player_id in self.host.jogadores:
@@ -528,6 +546,7 @@ class P2PForcaApp:
                         players=self.host.jogadores.copy(), rejoin=False,
                     )
                     self.enviar(peer_id, response)
+                    self.notificar_status()
 
                     self.host.seq += 1
                     for player_id in self.host.jogadores:
@@ -606,6 +625,7 @@ class P2PForcaApp:
         if type_name == "STATE":
             if self.player is not None:
                 self.player.processar_state(message)
+                self.notificar_status()
             return
 
         if type_name == "GUESS":
@@ -624,6 +644,7 @@ class P2PForcaApp:
             if "state" in result:
                 for player_id in list(self.host.jogadores):
                     self.enviar(player_id, result["state"] | {"dst": player_id, "msg_id": criar_envelope("STATE")["msg_id"]})
+                self.notificar_status()
             if "game_over" in result:
                 for player_id in list(self.host.jogadores):
                     self.enviar(player_id, result["game_over"] | {"dst": player_id, "msg_id": criar_envelope("GAME_OVER")["msg_id"]})

@@ -24,6 +24,8 @@ class CLI:
     def __init__(self, app, *args):
         self.app = app
         self.historico_rtt = {}
+        self._ultimo_status = None
+        self.app.definir_status_callback(self.mostrar_status_automatico)
        
         if len(args) == 1:
             self.encerrar = args[0]
@@ -31,6 +33,11 @@ class CLI:
             self.encerrar = args[2]
         else:
             self.encerrar = args[-1] if args else None
+
+    def mostrar_status_automatico(self, status):
+        if status != self._ultimo_status:
+            print(status)
+            self._ultimo_status = status
 
 # funcao que organiza os prints e demais visualizacoes da interface 
     def run(self):
@@ -145,10 +152,14 @@ class CLI:
                         else:
                             ok, result = self.app.criar(args[0], max_p)
                         print(f"[Host] partida criada: {result}" if ok else f"[CLI] {result}")
+                        if ok:
+                            print(self.app.status())
 
                 elif command == "/start":
                     ok, result = self.app.iniciar()
                     print(f"[Host] partida iniciada: {result}" if ok else f"[CLI] {result}")
+                    if ok:
+                        print(self.app.status())
 
                 elif command == "/cancel":
                     print("[Host] partida cancelada" if self.app.cancelar() else "[CLI] nenhuma partida hospedada")
@@ -159,6 +170,8 @@ class CLI:
                     else:
                         ok, result = self.app.entrar(args[0])
                         print("[Game] entrada confirmada" if ok else f"[CLI] entrada recusada: {result}")
+                        if ok:
+                            print(self.app.status())
 
                 elif command == "/leave":
                     print("[Game] partida abandonada" if self.app.sair() else "[CLI] não participa de partida")
@@ -169,6 +182,8 @@ class CLI:
                     else:
                         ok, result = self.app.guess(letter=args[0])
                         print(result if ok else f"[CLI] {result}")
+                        if ok:
+                            print(self.app.status())
 
                 elif command == "/word":
                     if not args:
@@ -176,6 +191,8 @@ class CLI:
                     else:
                         ok, result = self.app.guess(word=args[0])
                         print(result if ok else f"[CLI] {result}")
+                        if ok:
+                            print(self.app.status())
 
                 elif command == "/status":
                     print(self.app.status())
