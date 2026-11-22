@@ -41,6 +41,28 @@ class P2PForcaApp:
             except Exception:
                 pass
 
+    def mostrar_game_over(self, message):
+        result = message.get("result")
+        word = message.get("word")
+        winner = message.get("winner")
+        scores = message.get("scores", {})
+
+        if winner:
+            print(
+                f"[Game] Fim da partida: vitória "
+                f"Ganhador: {winner} Palavra: {word} Pontos: {scores}"
+            )
+        elif result == "LOST":
+            print(
+                f"[Game] Fim da partida: derrota "
+                f"Ganhador: ninguém Palavra: {word} Pontos: {scores}"
+            )
+        else:
+            print(
+                f"[Game] Fim da partida: {result} "
+                f"Ganhador: ninguém Palavra: {word} Pontos: {scores}"
+            )
+
  # funcao para envio de mensagem para um peer especifico 
     def enviar(self, peer_id, message):
         return enviar_para_peer(self.tabela, peer_id, message)
@@ -264,7 +286,7 @@ class P2PForcaApp:
                         self.enviar(player_id, state_copy)
                     except Exception:
                         pass
-            self.notificar_status()
+                self.notificar_status()
             time.sleep(0.5)
 
 # funcao que lista as partidas disponiveis 
@@ -648,6 +670,7 @@ class P2PForcaApp:
             if "game_over" in result:
                 for player_id in list(self.host.jogadores):
                     self.enviar(player_id, result["game_over"] | {"dst": player_id, "msg_id": criar_envelope("GAME_OVER")["msg_id"]})
+                self.mostrar_game_over(result["game_over"])
             return
 
         if type_name == "GUESS_RESULT":
@@ -660,20 +683,7 @@ class P2PForcaApp:
         if type_name == "GAME_OVER":
             if self.player is not None:
                 resultado = self.player.processar_game_over(message)
-                word = resultado.get("word")
-                winner = resultado.get("winner")
-                result = resultado.get("result")
-                scores = resultado.get("scores", {})
-                if winner:
-                    print(
-                        f"[Game] GAME_OVER {result} word={word} "
-                        f"winner={winner} scores={scores}"
-                    )
-                else:
-                    print(
-                        f"[Game] GAME_OVER {result} word={word} "
-                        f"scores={scores}"
-                    )
+                self.mostrar_game_over(resultado)
                 if not resultado.get("hash_valid", True):
                     logger.warning("[Player] host cheated: hash mismatch")
             else:
