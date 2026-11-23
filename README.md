@@ -49,7 +49,7 @@ py -3 --version
 py -3 src\main.py
 ```
 
-> No Windows o comando é `python` (ou `py -3`); o alias `python3` só existe no Linux/macOS.
+> No Windows o comando é `python` (ou `py -3`);
 
 O programa carrega `config.json` automaticamente. Para encerrar, use `/quit` ou `Ctrl+C`.
 
