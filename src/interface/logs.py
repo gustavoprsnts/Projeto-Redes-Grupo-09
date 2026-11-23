@@ -1,7 +1,7 @@
 import logging
 import sys
 
-TAGS_ESPECIFICACAO = {"RDV", "PeerServer", "KeepAlive", "Host", "Player", "Game"}
+TAGS_ESPECIFICACAO = {"RDV", "PeerServer", "KeepAlive", "Host", "Player", "Game", "CLI"}
 FORMATO = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _console = None
 MAPA = {
@@ -10,8 +10,12 @@ MAPA = {
     "conections.peer_table": "PeerServer",
     "conections.p2p_client": "PeerServer",
     "conections.keep_alive": "KeepAlive",
-    "forcaAPP": "Game", "src.forcaAPP": "Game",
-    "__main__": "CLI", "interface.cli": "CLI",
+    "game.forcaAPP": "Game", "src.game.forcaAPP": "Game",
+    "game.game_host": "Host", "src.game.game_host": "Host",
+    "game.game_player": "Player", "src.game.game_player": "Player",
+    "game.hangman": "Game", "src.game.hangman": "Game",
+    "__main__": "CLI", "main": "CLI", "src.main": "CLI",
+    "interface.cli": "CLI", "src.interface.cli": "CLI",
 }
 
 # classe 
@@ -19,10 +23,10 @@ class FiltroMensagem(logging.Filter):
      #funcao para filtrar mensagens de log 
    def filter(self, record):
         tag = MAPA.get(record.name)
-        if tag not in {"RDV", "CLI"}:
+        if tag not in TAGS_ESPECIFICACAO and tag != "CLI":
             return False
         record.name = tag
-        return record.levelno >= logging.INFO                               
+        return True
 
 
 

@@ -11,6 +11,7 @@ from conections.peer_connection import enviar_para_peer
 from conections.protocolo import criar_envelope
 from game.game_host import GameHost
 from game.game_player import GamePlayer
+from interface.logs import definir_nivel_tela
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class P2PForcaApp:
             except Exception:
                 pass
 
+#funcao destinada a interface de gameover
     def mostrar_game_over(self, message):
         result = message.get("result")
         word = message.get("word")
@@ -49,18 +51,18 @@ class P2PForcaApp:
 
         if winner:
             print(
-                f"[Game] Fim da partida: vitória "
-                f"Ganhador: {winner} Palavra: {word} Pontos: {scores}"
+                f"[Game] GAMEOVER "
+                f"WON: {winner} Palavra: {word} Pontos: {scores}"
             )
         elif result == "LOST":
             print(
-                f"[Game] Fim da partida: derrota "
-                f"Ganhador: ninguém Palavra: {word} Pontos: {scores}"
+                f"[Game] GAMEOVER "
+                f"Palavra: {word} Pontos: {scores}"
             )
         else:
             print(
-                f"[Game] Fim da partida: {result} "
-                f"Ganhador: ninguém Palavra: {word} Pontos: {scores}"
+                f"[Game] GAMEOVER: {result} "
+                f"Palavra: {word} Pontos: {scores}"
             )
 
  # funcao para envio de mensagem para um peer especifico 
@@ -178,8 +180,8 @@ class P2PForcaApp:
         }
         nivel = nivel.upper()
         if nivel not in niveis:
-            return False, "nível inválido; use DEBUG, INFO, WARNING ou ERROR"
-        logging.getLogger().setLevel(niveis[nivel])
+            return False, "nível inválido; use DEBUG, INFO, WARNING ou ERROR"     
+        definir_nivel_tela(nivel)
         return True, nivel
 
 # funcao que encerra de forma limpa uma partida ativa como host ou jogador
