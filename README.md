@@ -30,6 +30,7 @@ No terminal, a partir da pasta raiz do projeto:
 
 ```bash
 python3 --version
+cd caminho/do/projeto
 python3 src/main.py
 ```
 
@@ -39,6 +40,7 @@ No terminal (PowerShell ou CMD), a partir da pasta raiz do projeto:
 
 ```bash
 python --version
+cd caminho/do/projeto
 python src\main.py
 ```
 
