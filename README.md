@@ -33,6 +33,10 @@ python3 --version
 cd caminho/do/projeto
 python3 src/main.py
 ```
+caso não tenha o python instalado:
+```bash
+sudo apt update && sudo apt install python3
+```
 
 ### Windows
 
